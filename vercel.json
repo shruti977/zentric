@@ -5,7 +5,9 @@
   "regions": ["sfo1"],
   "build": {
     "env": {
-      "DATABASE_URL": "postgresql://placeholder:placeholder@placeholder/placeholder"
+      "DATABASE_URL": "postgresql://placeholder:placeholder@placeholder/placeholder",
+      "NEXTAUTH_SECRET": "build-time-placeholder-secret-32-chars-long",
+      "NEXTAUTH_URL": "https://zentric.vercel.app"
     }
   }
 }
