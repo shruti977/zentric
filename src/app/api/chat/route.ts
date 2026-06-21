@@ -75,7 +75,7 @@ Your message: *"${message}"*
 
   try {
     // Build message history for context
-    const history = conversation.messages.map((m) => ({
+    const history = conversation.messages.map((m: { role: string; content: string }) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
