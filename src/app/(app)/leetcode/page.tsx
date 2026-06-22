@@ -9,14 +9,15 @@ import {
   Target,
   Zap,
   CheckCircle,
-  Settings,
   Loader2,
   AlertCircle,
+  Pencil,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 
 interface SubmissionCount {
   difficulty: string;
@@ -62,14 +63,25 @@ function timeAgo(timestamp: string) {
 
 export default function LeetCodePage() {
   const [username, setUsername] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const [editing, setEditing] = useState(false);
   const [data, setData] = useState<LeetCodeData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const saveUsername = useCallback(async (uname: string) => {
+    await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leetcodeUsername: uname }),
+    });
+  }, []);
+
   const fetchData = useCallback(async (uname: string, isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+    else setSubmitting(true);
     setError(null);
 
     try {
@@ -77,13 +89,16 @@ export default function LeetCodePage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to fetch");
       setData(json);
+      setUsername(uname);
+      setEditing(false);
+      await saveUsername(uname);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [saveUsername]);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -92,13 +107,23 @@ export default function LeetCodePage() {
         const uname = d.settings?.leetcodeUsername?.trim();
         if (uname) {
           setUsername(uname);
+          setInputValue(uname);
           fetchData(uname);
         } else {
           setLoading(false);
         }
       })
       .catch(() => setLoading(false));
-  }, [fetchData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = inputValue.trim();
+    if (!val) return;
+    setLoading(false);
+    fetchData(val);
+  };
 
   if (loading) {
     return (
@@ -108,7 +133,8 @@ export default function LeetCodePage() {
     );
   }
 
-  if (!username) {
+  // No username yet OR editing
+  if (!username || editing) {
     return (
       <div className="p-6 lg:p-8 max-w-3xl mx-auto">
         <div className="mb-8">
@@ -118,32 +144,64 @@ export default function LeetCodePage() {
           </h1>
           <p className="text-gray-400 text-sm mt-1">Track your LeetCode progress</p>
         </div>
-        <Card className="border-dashed border-orange-500/30">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mb-4">
-              <Code2 className="w-8 h-8 text-orange-400" />
+        <Card>
+          <CardContent className="py-10">
+            <div className="flex flex-col items-center text-center max-w-sm mx-auto">
+              <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center mb-4">
+                <Code2 className="w-8 h-8 text-orange-400" />
+              </div>
+              <h3 className="text-lg font-medium text-white mb-1">
+                {editing ? "Change LeetCode Username" : "Connect your LeetCode"}
+              </h3>
+              <p className="text-gray-400 text-sm mb-6">
+                Enter your LeetCode username to see your solved problems, stats, and recent submissions.
+              </p>
+              <form onSubmit={handleSubmit} className="w-full space-y-3">
+                <Input
+                  autoFocus
+                  placeholder="e.g. suryansh15"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  className="text-center text-base"
+                />
+                {error && (
+                  <p className="text-red-400 text-xs flex items-center justify-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {error}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  {editing && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1 border-white/10 text-gray-400"
+                      onClick={() => { setEditing(false); setError(null); }}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                  <Button
+                    type="submit"
+                    disabled={submitting || !inputValue.trim()}
+                    className="flex-1 bg-gradient-to-r from-orange-600 to-yellow-600 hover:from-orange-700 hover:to-yellow-700 border-0"
+                  >
+                    {submitting ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    ) : (
+                      <Code2 className="w-4 h-4 mr-2" />
+                    )}
+                    {submitting ? "Loading..." : "Track my LeetCode"}
+                  </Button>
+                </div>
+              </form>
             </div>
-            <h3 className="text-lg font-medium text-white mb-2">Connect your LeetCode</h3>
-            <p className="text-gray-400 text-sm mb-6 max-w-sm">
-              Add your LeetCode username in Settings to see your solved problems, stats, and recent
-              submissions.
-            </p>
-            <Button
-              asChild
-              className="bg-gradient-to-r from-orange-600 to-yellow-600 hover:from-orange-700 hover:to-yellow-700 border-0"
-            >
-              <a href="/settings">
-                <Settings className="w-4 h-4 mr-2" />
-                Go to Settings
-              </a>
-            </Button>
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  if (error) {
+  if (error && !data) {
     return (
       <div className="p-6 lg:p-8 max-w-3xl mx-auto">
         <div className="mb-8">
@@ -157,14 +215,24 @@ export default function LeetCodePage() {
             <AlertCircle className="w-10 h-10 text-red-400 mb-3" />
             <p className="text-red-300 font-medium mb-1">Failed to load data</p>
             <p className="text-gray-500 text-sm mb-4">{error}</p>
-            <Button
-              onClick={() => fetchData(username, true)}
-              variant="outline"
-              className="border-white/10 text-gray-300 hover:text-white"
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Retry
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => fetchData(username, true)}
+                variant="outline"
+                className="border-white/10 text-gray-300 hover:text-white"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Retry
+              </Button>
+              <Button
+                onClick={() => { setEditing(true); setError(null); }}
+                variant="outline"
+                className="border-white/10 text-gray-300 hover:text-white"
+              >
+                <Pencil className="w-4 h-4 mr-2" />
+                Change Username
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -211,16 +279,27 @@ export default function LeetCodePage() {
             </a>
           </p>
         </div>
-        <Button
-          onClick={() => fetchData(username, true)}
-          disabled={refreshing}
-          variant="outline"
-          size="sm"
-          className="border-white/10 text-gray-300 hover:text-white"
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => { setEditing(true); setInputValue(username ?? ""); setError(null); }}
+            variant="outline"
+            size="sm"
+            className="border-white/10 text-gray-300 hover:text-white"
+          >
+            <Pencil className="w-4 h-4 mr-2" />
+            Change
+          </Button>
+          <Button
+            onClick={() => fetchData(username, true)}
+            disabled={refreshing}
+            variant="outline"
+            size="sm"
+            className="border-white/10 text-gray-300 hover:text-white"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Stats Overview */}
