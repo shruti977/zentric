@@ -30,6 +30,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Username required" }, { status: 400 });
   }
 
+  // Optional override: client can specify exactly which problem number to start from
+  const startFromParam = req.nextUrl.searchParams.get("startFrom");
+  const startFromOverride = startFromParam ? parseInt(startFromParam) : null;
   try {
     // Step 1: Fetch profile, recent submissions, and daily challenge in parallel
     const [profileRes, recentRes, dailyRes] = await Promise.all([
@@ -131,7 +134,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Step 3: Fetch next 5 problems after the last solved problem number
+    // Step 3: Fetch next 5 problems after the specified or auto-detected position
+    const skipTo = startFromOverride !== null ? startFromOverride : lastSolvedId;
     const suggestRes = await lcFetch(
       `query problemsetQuestionList($limit: Int, $skip: Int, $filters: QuestionListFilterInput) {
         problemsetQuestionList: questionList(
@@ -154,7 +158,7 @@ export async function GET(req: NextRequest) {
           }
         }
       }`,
-      { limit: 15, skip: lastSolvedId, filters: {} }
+      { limit: 15, skip: skipTo, filters: {} }
     );
 
     const allSuggestions: {
@@ -181,6 +185,7 @@ export async function GET(req: NextRequest) {
       suggestions,
       lastSolvedId,
       lastSolvedTitle,
+      startFrom: skipTo,
     });
   } catch {
     return NextResponse.json(

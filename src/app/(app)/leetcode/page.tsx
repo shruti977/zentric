@@ -65,6 +65,7 @@ interface LeetCodeData {
   suggestions: SuggestedProblem[];
   lastSolvedId: number;
   lastSolvedTitle: string;
+  startFrom: number;
 }
 
 const difficultyColor = {
@@ -98,6 +99,10 @@ export default function LeetCodePage() {
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // For "continue solving" start override
+  const [editingStart, setEditingStart] = useState(false);
+  const [startInput, setStartInput] = useState("");
+  const [loadingStart, setLoadingStart] = useState(false);
 
   const saveUsername = useCallback(async (uname: string) => {
     await fetch("/api/settings", {
@@ -107,13 +112,14 @@ export default function LeetCodePage() {
     });
   }, []);
 
-  const fetchData = useCallback(async (uname: string, isRefresh = false) => {
+  const fetchData = useCallback(async (uname: string, isRefresh = false, startFrom?: number) => {
     if (isRefresh) setRefreshing(true);
     else setSubmitting(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/leetcode?username=${encodeURIComponent(uname)}`);
+      const url = `/api/leetcode?username=${encodeURIComponent(uname)}${startFrom !== undefined ? `&startFrom=${startFrom}` : ""}`;
+      const res = await fetch(url);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to fetch");
       setData(json);
@@ -466,13 +472,51 @@ export default function LeetCodePage() {
       {data.suggestions.length > 0 && (
         <Card className="mb-6">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="text-base flex items-center gap-2 flex-wrap">
               <Lightbulb className="w-4 h-4 text-yellow-400" />
               Continue Solving
-              {data.lastSolvedId > 0 && (
-                <Badge variant="outline" className="ml-1 text-xs border-white/10 text-gray-400">
-                  Next after #{data.lastSolvedId}
-                </Badge>
+              {!editingStart ? (
+                <>
+                  <Badge variant="outline" className="text-xs border-white/10 text-gray-400">
+                    Next after #{data.startFrom}
+                  </Badge>
+                  <button
+                    onClick={() => { setEditingStart(true); setStartInput(String(data.startFrom)); }}
+                    className="text-xs text-gray-500 hover:text-orange-400 underline underline-offset-2 transition-colors"
+                  >
+                    Change
+                  </button>
+                </>
+              ) : (
+                <form
+                  className="flex items-center gap-2 ml-1"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const val = parseInt(startInput);
+                    if (!isNaN(val) && val >= 0 && username) {
+                      setLoadingStart(true);
+                      await fetchData(username, true, val);
+                      setLoadingStart(false);
+                      setEditingStart(false);
+                    }
+                  }}
+                >
+                  <span className="text-xs text-gray-500">Start from #</span>
+                  <Input
+                    autoFocus
+                    type="number"
+                    min={0}
+                    value={startInput}
+                    onChange={(e) => setStartInput(e.target.value)}
+                    className="w-20 h-7 text-xs px-2"
+                  />
+                  <Button type="submit" size="sm" disabled={loadingStart} className="h-7 px-3 text-xs bg-orange-600 hover:bg-orange-700 border-0">
+                    {loadingStart ? <Loader2 className="w-3 h-3 animate-spin" /> : "Go"}
+                  </Button>
+                  <button type="button" onClick={() => setEditingStart(false)} className="text-xs text-gray-600 hover:text-gray-400">
+                    Cancel
+                  </button>
+                </form>
               )}
             </CardTitle>
           </CardHeader>
