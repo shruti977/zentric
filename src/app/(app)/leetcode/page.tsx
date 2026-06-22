@@ -12,6 +12,8 @@ import {
   Loader2,
   AlertCircle,
   Pencil,
+  Flame,
+  Lightbulb,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,28 @@ import { Input } from "@/components/ui/input";
 interface SubmissionCount {
   difficulty: string;
   count: number;
+}
+
+interface SuggestedProblem {
+  frontendQuestionId: string;
+  title: string;
+  titleSlug: string;
+  difficulty: string;
+  acRate: number;
+  topicTags: { name: string; slug: string }[];
+}
+
+interface DailyChallenge {
+  date: string;
+  link: string;
+  question: {
+    frontendQuestionId: string;
+    title: string;
+    titleSlug: string;
+    difficulty: string;
+    acRate: number;
+    topicTags: { name: string; slug: string }[];
+  };
 }
 
 interface LeetCodeData {
@@ -37,6 +61,9 @@ interface LeetCodeData {
     titleSlug: string;
     timestamp: string;
   }[];
+  dailyChallenge: DailyChallenge | null;
+  suggestions: SuggestedProblem[];
+  recommendedDifficulty: string;
 }
 
 const difficultyColor = {
@@ -374,6 +401,120 @@ export default function LeetCodePage() {
           ))}
         </CardContent>
       </Card>
+
+      {/* Daily Challenge */}
+      {data.dailyChallenge && (
+        <Card className="mb-6 border-orange-500/30 bg-gradient-to-br from-orange-500/5 to-yellow-500/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Flame className="w-4 h-4 text-orange-400" />
+              Daily Coding Challenge
+              <Badge variant="outline" className="ml-auto text-xs border-orange-500/30 text-orange-400 bg-orange-500/10">
+                {data.dailyChallenge.date}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="text-xs text-gray-500 font-mono">
+                    #{data.dailyChallenge.question.frontendQuestionId}
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={`text-xs border ${difficultyBg[data.dailyChallenge.question.difficulty as keyof typeof difficultyBg] ?? "bg-gray-500/10 border-gray-500/20"} ${difficultyColor[data.dailyChallenge.question.difficulty as keyof typeof difficultyColor] ?? "text-gray-400"}`}
+                  >
+                    {data.dailyChallenge.question.difficulty}
+                  </Badge>
+                  <span className="text-xs text-gray-500">
+                    {Math.round(data.dailyChallenge.question.acRate)}% acceptance
+                  </span>
+                </div>
+                <p className="text-white font-medium mb-2">{data.dailyChallenge.question.title}</p>
+                <div className="flex flex-wrap gap-1">
+                  {data.dailyChallenge.question.topicTags.slice(0, 4).map((tag) => (
+                    <span
+                      key={tag.slug}
+                      className="text-xs px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-gray-400"
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <Button
+                asChild
+                size="sm"
+                className="flex-shrink-0 bg-gradient-to-r from-orange-600 to-yellow-600 hover:from-orange-700 hover:to-yellow-700 border-0"
+              >
+                <a
+                  href={`https://leetcode.com${data.dailyChallenge.link}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Solve <ExternalLink className="w-3 h-3 ml-1" />
+                </a>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Continue Solving — Suggestions */}
+      {data.suggestions.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Lightbulb className="w-4 h-4 text-yellow-400" />
+              Continue Solving
+              <Badge variant="outline" className="ml-1 text-xs border-white/10 text-gray-400">
+                Recommended: {data.recommendedDifficulty}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {data.suggestions.map((prob) => (
+                <a
+                  key={prob.frontendQuestionId}
+                  href={`https://leetcode.com/problems/${prob.titleSlug}/`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-3 p-3 rounded-lg border border-white/5 hover:border-white/15 hover:bg-white/5 transition-all group"
+                >
+                  <span className="text-xs text-gray-600 font-mono mt-0.5 w-8 flex-shrink-0">
+                    #{prob.frontendQuestionId}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-300 group-hover:text-white truncate transition-colors leading-tight">
+                      {prob.title}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span
+                        className={`text-xs font-medium ${
+                          difficultyColor[prob.difficulty as keyof typeof difficultyColor] ?? "text-gray-400"
+                        }`}
+                      >
+                        {prob.difficulty}
+                      </span>
+                      <span className="text-xs text-gray-600">
+                        {Math.round(prob.acRate)}% AC
+                      </span>
+                      {prob.topicTags[0] && (
+                        <span className="text-xs text-gray-600 truncate">
+                          · {prob.topicTags[0].name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <ExternalLink className="w-3 h-3 text-gray-600 group-hover:text-gray-400 flex-shrink-0 mt-1 transition-colors" />
+                </a>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Accepted Submissions */}
       <Card>

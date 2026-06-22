@@ -31,7 +31,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [profileRes, recentRes] = await Promise.all([
+    // Step 1: Fetch profile, recent submissions, and daily challenge in parallel
+    const [profileRes, recentRes, dailyRes] = await Promise.all([
       lcFetch(
         `query userProfile($username: String!) {
           matchedUser(username: $username) {
@@ -66,6 +67,26 @@ export async function GET(req: NextRequest) {
         }`,
         { username }
       ),
+      lcFetch(
+        `query questionOfToday {
+          activeDailyCodingChallengeQuestion {
+            date
+            link
+            question {
+              frontendQuestionId: questionFrontendId
+              title
+              titleSlug
+              difficulty
+              acRate
+              topicTags {
+                name
+                slug
+              }
+            }
+          }
+        }`,
+        {}
+      ),
     ]);
 
     if (!profileRes.data?.matchedUser) {
@@ -75,10 +96,68 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Step 2: Determine recommended difficulty based on solved counts
+    const acCounts: { difficulty: string; count: number }[] =
+      profileRes.data.matchedUser.submitStats.acSubmissionNum;
+    const easySolved = acCounts.find((c) => c.difficulty === "Easy")?.count ?? 0;
+    const mediumSolved = acCounts.find((c) => c.difficulty === "Medium")?.count ?? 0;
+    const recommendedDifficulty =
+      easySolved < 50 ? "EASY" : mediumSolved < 100 ? "MEDIUM" : "HARD";
+
+    // Step 3: Fetch suggested problems at recommended difficulty
+    const recentSlugs = new Set(
+      (recentRes.data?.recentAcSubmissionList ?? []).map(
+        (s: { titleSlug: string }) => s.titleSlug
+      )
+    );
+
+    const suggestRes = await lcFetch(
+      `query problemsetQuestionList($limit: Int, $skip: Int, $filters: QuestionListFilterInput) {
+        problemsetQuestionList: questionList(
+          categorySlug: ""
+          limit: $limit
+          skip: $skip
+          filters: $filters
+        ) {
+          questions: data {
+            frontendQuestionId: questionFrontendId
+            title
+            titleSlug
+            difficulty
+            acRate
+            paidOnly: isPaidOnly
+            topicTags {
+              name
+              slug
+            }
+          }
+        }
+      }`,
+      { limit: 50, skip: 0, filters: { difficulty: recommendedDifficulty } }
+    );
+
+    const allSuggestions: {
+      frontendQuestionId: string;
+      title: string;
+      titleSlug: string;
+      difficulty: string;
+      acRate: number;
+      paidOnly: boolean;
+      topicTags: { name: string; slug: string }[];
+    }[] = suggestRes.data?.problemsetQuestionList?.questions ?? [];
+
+    // Filter out paid and recently solved
+    const suggestions = allSuggestions
+      .filter((q) => !q.paidOnly && !recentSlugs.has(q.titleSlug))
+      .slice(0, 10);
+
     return NextResponse.json({
       user: profileRes.data.matchedUser,
       allCounts: profileRes.data.allQuestionsCount,
       recentSubmissions: recentRes.data?.recentAcSubmissionList ?? [],
+      dailyChallenge: dailyRes.data?.activeDailyCodingChallengeQuestion ?? null,
+      suggestions,
+      recommendedDifficulty: recommendedDifficulty.charAt(0) + recommendedDifficulty.slice(1).toLowerCase(),
     });
   } catch {
     return NextResponse.json(
@@ -87,3 +166,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
