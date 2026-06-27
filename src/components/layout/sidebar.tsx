@@ -11,6 +11,8 @@ import {
   MessageSquare,
   Settings,
   Bot,
+  Braces,
+  BriefcaseBusiness,
   LogOut,
   Zap,
   Menu,
@@ -26,20 +28,29 @@ const navigation = [
   { name: "Planner", href: "/planner", icon: CheckSquare },
   { name: "Study Tracker", href: "/study", icon: BookOpen },
   { name: "LeetCode", href: "/leetcode", icon: Code2 },
-  { name: "Notes", href: "/notes", icon: FileText },
+  { name: "Coding Hub", href: "/coding-hub", icon: Braces },
+  { name: "Second Brain", href: "/notes", icon: FileText },
+  { name: "Career Hub", href: "/career", icon: BriefcaseBusiness },
   { name: "AI Chat", href: "/chat", icon: MessageSquare },
   { name: "Agents", href: "/agents", icon: Bot },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
-export function Sidebar() {
-  const pathname = usePathname();
-  const { data: session } = useSession();
-  const [mobileOpen, setMobileOpen] = useState(false);
+type SidebarContentProps = {
+  pathname: string;
+  userName?: string | null;
+  userEmail?: string | null;
+  closeMobile: () => void;
+};
 
-  const SidebarContent = () => (
+function SidebarContent({
+  pathname,
+  userName,
+  userEmail,
+  closeMobile,
+}: SidebarContentProps) {
+  return (
     <div className="flex h-full flex-col">
-      {/* Logo */}
       <div className="flex items-center gap-2 px-6 py-5 border-b border-white/10">
         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-blue-600">
           <Zap className="w-4 h-4 text-white" />
@@ -50,7 +61,6 @@ export function Sidebar() {
         </span>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navigation.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -58,7 +68,7 @@ export function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
-              onClick={() => setMobileOpen(false)}
+              onClick={closeMobile}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group",
                 isActive
@@ -73,25 +83,20 @@ export function Sidebar() {
                 )}
               />
               {item.name}
-              {isActive && (
-                <div className="ml-auto w-1 h-1 rounded-full bg-purple-400" />
-              )}
+              {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-purple-400" />}
             </Link>
           );
         })}
       </nav>
 
-      {/* User section */}
       <div className="border-t border-white/10 p-4">
         <div className="flex items-center gap-3 mb-3">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-blue-500 flex items-center justify-center text-white text-sm font-bold">
-            {session?.user?.name?.[0]?.toUpperCase() || session?.user?.email?.[0]?.toUpperCase() || "U"}
+            {userName?.[0]?.toUpperCase() || userEmail?.[0]?.toUpperCase() || "U"}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">
-              {session?.user?.name || "User"}
-            </p>
-            <p className="text-xs text-gray-500 truncate">{session?.user?.email}</p>
+            <p className="text-sm font-medium text-white truncate">{userName || "User"}</p>
+            <p className="text-xs text-gray-500 truncate">{userEmail}</p>
           </div>
         </div>
         <Button
@@ -106,6 +111,12 @@ export function Sidebar() {
       </div>
     </div>
   );
+}
+
+export function Sidebar() {
+  const pathname = usePathname();
+  const { data: session } = useSession();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <>
@@ -132,12 +143,22 @@ export function Sidebar() {
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <SidebarContent />
+        <SidebarContent
+          pathname={pathname}
+          userName={session?.user?.name}
+          userEmail={session?.user?.email}
+          closeMobile={() => setMobileOpen(false)}
+        />
       </aside>
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-64 flex-col h-screen fixed left-0 top-0 bg-gray-950 border-r border-white/10 z-30">
-        <SidebarContent />
+        <SidebarContent
+          pathname={pathname}
+          userName={session?.user?.name}
+          userEmail={session?.user?.email}
+          closeMobile={() => setMobileOpen(false)}
+        />
       </aside>
     </>
   );

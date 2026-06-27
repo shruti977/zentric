@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Plus,
   Send,
@@ -53,15 +53,44 @@ export default function ChatPage() {
     scrollToBottom();
   }, [messages, streamingMessage]);
 
-  const fetchConversations = useCallback(async () => {
+  const fetchConversations = async () => {
     const res = await fetch("/api/conversations");
     const data = await res.json();
     setConversations(Array.isArray(data) ? data : []);
-  }, []);
+  };
 
   useEffect(() => {
-    fetchConversations();
-  }, [fetchConversations]);
+    let cancelled = false;
+
+    fetch("/api/conversations")
+      .then((response) => response.json())
+      .then(async (data) => {
+        if (cancelled) return;
+
+        const conversationList: Conversation[] = Array.isArray(data) ? data : [];
+        setConversations(conversationList);
+
+        const conversationId = new URLSearchParams(window.location.search).get("conversation");
+        const selectedConversation = conversationList.find(
+          (conversation) => conversation.id === conversationId,
+        );
+        if (!selectedConversation) return;
+
+        const response = await fetch(`/api/conversations/${selectedConversation.id}`);
+        const selectedData = await response.json();
+        if (cancelled) return;
+
+        setActiveConversation(selectedConversation);
+        setMessages(selectedData.messages || []);
+      })
+      .catch(() => {
+        if (!cancelled) setConversations([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadConversation = async (conv: Conversation) => {
     setActiveConversation(conv);

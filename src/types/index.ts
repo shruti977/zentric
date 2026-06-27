@@ -46,6 +46,7 @@ export interface Note {
   title: string;
   content: string;
   tags?: string | null;
+  category: string;
   createdAt: Date | string;
   updatedAt: Date | string;
   userId: string;
@@ -127,6 +128,7 @@ export interface CreateNoteInput {
   title: string;
   content: string;
   tags?: string;
+  category?: string;
 }
 
 export interface UpdateNoteInput extends Partial<CreateNoteInput> {}

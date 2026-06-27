@@ -4,6 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { handleApiError, unauthorized, badRequest } from "@/lib/api-error";
 import { sanitizeString } from "@/lib/utils";
 
+const noteCategories = new Set([
+  "second_brain",
+  "learning",
+  "interview",
+  "project",
+  "research",
+]);
+
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const session = await auth();
@@ -13,10 +21,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const { searchParams } = new URL(req.url);
     const search = sanitizeString(searchParams.get("q") || "");
+    const requestedCategory = sanitizeString(searchParams.get("category") || "");
+    const category = noteCategories.has(requestedCategory) ? requestedCategory : "";
 
     const notes = await prisma.note.findMany({
       where: {
         userId: session.user.id,
+        ...(category ? { category } : {}),
         ...(search
           ? {
               OR: [
@@ -46,6 +57,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const body = await req.json();
     const { title, content, tags } = body;
+    const category =
+      typeof body.category === "string" && noteCategories.has(body.category)
+        ? body.category
+        : "second_brain";
 
     if (!title || typeof title !== "string") {
       throw badRequest("Title is required and must be a string");
@@ -67,6 +82,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         title: trimmedTitle,
         content: trimmedContent,
         tags: tags && typeof tags === "string" ? tags.trim() : null,
+        category,
         userId: session.user.id,
       },
     });

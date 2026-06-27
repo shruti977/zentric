@@ -1,26 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import {
-  CheckSquare,
-  FileText,
-  BookOpen,
-  Target,
-  TrendingUp,
-  Calendar,
-  MessageSquare,
+  Activity,
   ArrowRight,
-  Zap,
+  BarChart3,
+  BookOpen,
+  Bot,
+  Brain,
+  Briefcase,
+  Calendar,
+  CheckCircle2,
+  ChevronRight,
   Clock,
+  Code2,
+  Flame,
+  GitBranch,
+  GraduationCap,
+  Lightbulb,
+  LineChart,
+  Rocket,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  Target,
+  Trophy,
+  Zap,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDate } from "@/lib/utils";
 
 interface DashboardData {
   stats: {
@@ -33,351 +45,990 @@ interface DashboardData {
     totalGoals: number;
     productivityScore: number;
   };
-  todaysTasks: Array<{
-    id: string;
-    title: string;
+  growth: GrowthDashboard;
+}
+
+type MissionBreakdownItem = {
+  label: string;
+  value: number;
+  color: string;
+  source?: string;
+};
+
+type CompanyReadiness = {
+  company: string;
+  readiness: number;
+  weakest: string;
+  prepTime: string;
+  missing: string[];
+  roadmap: string[];
+};
+
+type GrowthPlanItem = {
+  time: string;
+  title: string;
+  duration: string;
+  priority: string;
+  impact: string;
+  href: string;
+};
+
+type CoachSignal = {
+  insight: string;
+  action: string;
+  href: string;
+};
+
+type LabelValue = {
+  label: string;
+  value: string;
+};
+
+type CareerProgressItem = {
+  label: string;
+  value: number;
+};
+
+type GrowthDashboard = {
+  currentMission: string;
+  growthScore: number;
+  currentReadiness: string;
+  estimatedDaysRemaining: number;
+  estimatedStudyHoursToday: number;
+  readinessIncrease: number;
+  recommendations: string[];
+  missionProgress: {
+    mission: string;
+    overallProgress: number;
+    breakdown: MissionBreakdownItem[];
+  };
+  companyReadiness: CompanyReadiness[];
+  growthPlan: GrowthPlanItem[];
+  coachSignals: CoachSignal[];
+  knowledgeRetention: LabelValue[];
+  learningAnalytics: LabelValue[];
+  leetcodeInsights: LabelValue[];
+  secondBrainSummary: LabelValue[];
+  careerProgress: CareerProgressItem[];
+  focus: {
+    topic: string;
     priority: string;
-    completed: boolean;
-    deadline?: string | null;
-  }>;
-  upcomingDeadlines: Array<{
-    id: string;
-    title: string;
-    priority: string;
-    deadline: string;
-  }>;
-  recentNotes: Array<{
-    id: string;
-    title: string;
-    content: string;
-    updatedAt: string;
-  }>;
-  goals: Array<{
-    id: string;
-    title: string;
-    progress: number;
-    target: number;
-  }>;
+    estimatedTime: string;
+    reason: string;
+  };
+  motivation: string;
+  recentAchievements: string[];
+  sources: {
+    planner: number;
+    studyTracker: number;
+    secondBrain: number;
+    goals: number;
+    leetcode: string | null;
+    codingHub: string;
+    resumeCareer: string;
+  };
+};
+
+const missionBreakdown: MissionBreakdownItem[] = [
+  { label: "Coding", value: 85, color: "#60a5fa" },
+  { label: "CS Fundamentals", value: 62, color: "#a78bfa" },
+  { label: "Projects", value: 75, color: "#22d3ee" },
+  { label: "Resume", value: 90, color: "#34d399" },
+  { label: "Interview Skills", value: 54, color: "#f472b6" },
+  { label: "Behavioral", value: 70, color: "#facc15" },
+];
+
+const companyReadiness: CompanyReadiness[] = [
+  {
+    company: "Google",
+    readiness: 72,
+    weakest: "Graphs, DP recall",
+    prepTime: "38 days",
+    missing: ["Advanced Graphs", "System Design", "Mock interviews"],
+    roadmap: [
+      "Master graph traversal, shortest paths, and union-find patterns.",
+      "Ship one resume-grade project with measurable impact.",
+      "Complete 4 Google-style mock interviews with feedback loops.",
+    ],
+  },
+  {
+    company: "Amazon",
+    readiness: 78,
+    weakest: "Leadership stories",
+    prepTime: "27 days",
+    missing: ["LP stories", "Trees", "Behavioral drills"],
+    roadmap: [
+      "Prepare STAR stories for ownership, bias for action, and customer obsession.",
+      "Revise trees, heaps, and sliding window patterns.",
+      "Run two behavioral mocks focused on follow-up questions.",
+    ],
+  },
+  {
+    company: "Microsoft",
+    readiness: 69,
+    weakest: "System design basics",
+    prepTime: "34 days",
+    missing: ["OOP design", "DP", "Azure basics"],
+    roadmap: [
+      "Build confidence in object-oriented design interviews.",
+      "Revise DP patterns with spaced repetition.",
+      "Add one cloud-flavored project bullet to your resume.",
+    ],
+  },
+  {
+    company: "Atlassian",
+    readiness: 66,
+    weakest: "Frontend systems",
+    prepTime: "42 days",
+    missing: ["Frontend architecture", "Collaboration tools", "Product thinking"],
+    roadmap: [
+      "Practice product-minded engineering tradeoffs.",
+      "Document one collaboration-focused project in Second Brain.",
+      "Revise frontend performance and component architecture.",
+    ],
+  },
+  {
+    company: "Adobe",
+    readiness: 64,
+    weakest: "Projects depth",
+    prepTime: "45 days",
+    missing: ["Creative tooling", "OS revision", "Portfolio polish"],
+    roadmap: [
+      "Improve your project case studies with problem, architecture, and outcome.",
+      "Refresh OS concepts and memory management.",
+      "Create a polished portfolio narrative for interviews.",
+    ],
+  },
+  {
+    company: "Uber",
+    readiness: 61,
+    weakest: "Scale thinking",
+    prepTime: "49 days",
+    missing: ["Distributed systems", "Graphs", "Rate limiting"],
+    roadmap: [
+      "Study high-scale design patterns: queues, caching, and rate limits.",
+      "Solve graph problems tied to routing and optimization.",
+      "Practice explaining tradeoffs under time pressure.",
+    ],
+  },
+];
+
+const growthPlan: GrowthPlanItem[] = [
+  {
+    time: "9:00",
+    title: "Binary Search Revision",
+    duration: "35 min",
+    priority: "High",
+    impact: "+0.4%",
+    href: "/study",
+  },
+  {
+    time: "10:00",
+    title: "Solve Medium Graph Question",
+    duration: "60 min",
+    priority: "Critical",
+    impact: "+1.1%",
+    href: "/coding-hub",
+  },
+  {
+    time: "11:30",
+    title: "Resume Improvement",
+    duration: "40 min",
+    priority: "High",
+    impact: "+0.6%",
+    href: "/planner",
+  },
+  {
+    time: "2:00",
+    title: "System Design Reading",
+    duration: "45 min",
+    priority: "Medium",
+    impact: "+0.5%",
+    href: "/notes",
+  },
+  {
+    time: "4:00",
+    title: "Mock Interview Reflection",
+    duration: "30 min",
+    priority: "High",
+    impact: "+0.4%",
+    href: "/chat",
+  },
+];
+
+const coachSignals: CoachSignal[] = [
+  {
+    insight: "You haven't revised Dynamic Programming for 12 days.",
+    action: "Revise",
+    href: "/study",
+  },
+  {
+    insight: "Arrays mastery is 94%. Focus on Graphs for the fastest readiness gain.",
+    action: "Practice",
+    href: "/coding-hub",
+  },
+  {
+    insight:
+      "Based on your LeetCode history, Medium Graph problems will improve interview readiness fastest.",
+    action: "Practice",
+    href: "/leetcode",
+  },
+  {
+    insight: "Your resume project section needs stronger impact metrics.",
+    action: "Review",
+    href: "/planner",
+  },
+];
+
+const retentionStats: LabelValue[] = [
+  { label: "Retention Score", value: "76%" },
+  { label: "Topics Forgotten", value: "8" },
+  { label: "Topics To Revise", value: "14" },
+  { label: "Flashcards Due Today", value: "22" },
+  { label: "Revision Streak", value: "9 days" },
+];
+
+const learningAnalytics = [
+  { label: "Topics Mastered", value: "42", icon: Trophy },
+  { label: "Topics In Progress", value: "18", icon: Activity },
+  { label: "Weakest Topic", value: "Graphs", icon: Target },
+  { label: "Longest Learning Streak", value: "21 days", icon: Flame },
+  { label: "Most Consistent Week", value: "Mon-Fri", icon: Calendar },
+  { label: "Learning Velocity", value: "+18%", icon: LineChart },
+];
+
+const leetcodeInsights: LabelValue[] = [
+  { label: "Problems Solved", value: "128" },
+  { label: "Current Streak", value: "11 days" },
+  { label: "Contest Rating", value: "1,642" },
+  { label: "Strongest Pattern", value: "Arrays" },
+  { label: "Weakest Pattern", value: "Graphs" },
+  { label: "Acceptance Rate", value: "61%" },
+  { label: "Predicted Rating in 30 days", value: "1,760" },
+  { label: "Company-wise readiness", value: "Google 72%" },
+];
+
+const careerProgress: CareerProgressItem[] = [
+  { label: "Resume Score", value: 82 },
+  { label: "ATS Score", value: 78 },
+  { label: "Projects Completed", value: 75 },
+  { label: "GitHub Activity", value: 68 },
+  { label: "LinkedIn Optimization", value: 64 },
+  { label: "Interview Readiness", value: 71 },
+];
+
+const recentAchievements = [
+  "Solved 5 Medium Problems",
+  "Completed Operating Systems",
+  "Reached 100 LeetCode Questions",
+  "Completed Resume",
+  "Finished Mock Interview",
+];
+
+function ProgressRing({
+  value,
+  label,
+  color = "#8b5cf6",
+  size = "md",
+}: {
+  value: number;
+  label: string;
+  color?: string;
+  size?: "sm" | "md";
+}) {
+  const radius = 38;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference - (value / 100) * circumference;
+  const dimensions = size === "sm" ? "h-24 w-24" : "h-28 w-28";
+
+  return (
+    <div className="group flex flex-col items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.06]">
+      <div className={`relative ${dimensions}`}>
+        <svg className="h-full w-full -rotate-90" viewBox="0 0 96 96">
+          <circle
+            cx="48"
+            cy="48"
+            r={radius}
+            fill="none"
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth="8"
+          />
+          <circle
+            cx="48"
+            cy="48"
+            r={radius}
+            fill="none"
+            stroke={color}
+            strokeLinecap="round"
+            strokeWidth="8"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            className="transition-all duration-1000 ease-out"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-xl font-bold text-white">{value}%</span>
+        </div>
+      </div>
+      <p className="text-center text-xs font-medium text-gray-300">{label}</p>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  icon: React.ElementType;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-purple-400/30 hover:bg-purple-500/[0.05]">
+      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/10 text-purple-300">
+        <Icon className="h-4 w-4" />
+      </div>
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-white">{value}</p>
+    </div>
+  );
+}
+
+function SectionHeader({
+  icon: Icon,
+  title,
+  eyebrow,
+}: {
+  icon: React.ElementType;
+  title: string;
+  eyebrow?: string;
+}) {
+  return (
+    <div className="mb-5 flex items-center justify-between gap-4">
+      <div>
+        {eyebrow && (
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-purple-300">
+            {eyebrow}
+          </p>
+        )}
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/10 text-blue-300">
+            <Icon className="h-4 w-4" />
+          </span>
+          {title}
+        </h2>
+      </div>
+    </div>
+  );
+}
+
+function GlassPanel({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`glass-card rounded-[1.35rem] p-5 shadow-2xl shadow-black/20 transition-all duration-300 hover:border-white/15 ${className}`}
+    >
+      {children}
+    </section>
+  );
 }
 
 export default function DashboardPage() {
   const { data: session } = useSession();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedCompany, setSelectedCompany] = useState<CompanyReadiness>(
+    companyReadiness[0]!
+  );
 
   useEffect(() => {
     fetch("/api/dashboard")
       .then((r) => r.json())
       .then((d) => {
         setData(d);
+        if (d.growth?.companyReadiness?.[0]) {
+          setSelectedCompany(d.growth.companyReadiness[0]);
+        }
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
 
-  const statCards = [
+  const firstName = session?.user?.name?.split(" ")[0] || "there";
+  const growth = data?.growth;
+  const noteCount = data?.stats.totalNotes ?? 0;
+  const studyCompletion = data?.stats.totalStudyTopics
+    ? Math.round(
+        (data.stats.completedStudyTopics / data.stats.totalStudyTopics) * 100
+      )
+    : 62;
+
+  const secondBrainSummary = useMemo(
+    () =>
+      growth?.secondBrainSummary ?? [
+        { label: "Notes Created", value: loading ? "..." : String(noteCount) },
+        { label: "Knowledge Connections", value: "0" },
+        { label: "Flashcards Generated", value: "0" },
+        { label: "Interview Notes", value: "0" },
+        { label: "AI Summaries", value: "0" },
+        { label: "Recent Learning", value: "No recent note yet" },
+      ],
+    [growth?.secondBrainSummary, loading, noteCount]
+  );
+
+  const heroStats = [
+    { label: "Current Mission", value: growth?.currentMission ?? "Become Software Engineer at Google" },
+    { label: "Growth Score", value: `${growth?.growthScore ?? 0}%` },
+    { label: "Current Readiness", value: growth?.currentReadiness ?? "Calculating" },
     {
-      title: "Tasks Completed",
-      value: data?.stats.completedTasks ?? 0,
-      total: data?.stats.totalTasks ?? 0,
-      icon: CheckSquare,
-      color: "text-green-400",
-      bg: "bg-green-400/10",
-      href: "/planner",
+      label: "Estimated Days Remaining",
+      value: `${growth?.estimatedDaysRemaining ?? 0} days`,
     },
     {
-      title: "Study Topics",
-      value: data?.stats.completedStudyTopics ?? 0,
-      total: data?.stats.totalStudyTopics ?? 0,
-      icon: BookOpen,
-      color: "text-blue-400",
-      bg: "bg-blue-400/10",
-      href: "/study",
-    },
-    {
-      title: "Notes Created",
-      value: data?.stats.totalNotes ?? 0,
-      total: null,
-      icon: FileText,
-      color: "text-yellow-400",
-      bg: "bg-yellow-400/10",
-      href: "/notes",
-    },
-    {
-      title: "Active Goals",
-      value: data?.stats.totalGoals ?? 0,
-      total: null,
-      icon: Target,
-      color: "text-purple-400",
-      bg: "bg-purple-400/10",
-      href: "/planner",
+      label: "Study Hours Today",
+      value: `${growth?.estimatedStudyHoursToday ?? 0} hrs`,
     },
   ];
 
-  const aiSuggestions = [
-    "Review your pending tasks and prioritize high-impact items",
-    "Add 30 minutes of focused study time to your schedule",
-    "Document your learnings from today in the Notes section",
-    "Practice 2-3 LeetCode problems to maintain coding skills",
+  const recommendations = growth?.recommendations ?? [
+    "Add study topics",
+    "Connect LeetCode",
+    "Create project notes",
+    "Track resume tasks",
   ];
+  const missionProgress = growth?.missionProgress ?? {
+    mission: "Become Software Engineer at Google",
+    overallProgress: 0,
+    breakdown: missionBreakdown,
+  };
+  const companyReadinessItems = growth?.companyReadiness ?? companyReadiness;
+  const growthPlanItems = growth?.growthPlan ?? growthPlan;
+  const coachSignalItems = growth?.coachSignals ?? coachSignals;
+  const retentionItems = growth?.knowledgeRetention ?? retentionStats;
+  const learningAnalyticsItems = growth?.learningAnalytics ?? learningAnalytics;
+  const leetcodeInsightItems = growth?.leetcodeInsights ?? leetcodeInsights;
+  const careerProgressItems = growth?.careerProgress ?? careerProgress;
+  const focus = growth?.focus ?? {
+    topic: "Graphs",
+    priority: "High",
+    estimatedTime: "90 min",
+    reason: "Graphs are currently your weakest interview topic.",
+  };
+  const motivation =
+    growth?.motivation ??
+    "Keep going. Every real task, note, study topic and coding session will sharpen this score.";
+  const recentAchievementItems = growth?.recentAchievements ?? recentAchievements;
+  const learningIconMap: Record<string, React.ElementType> = {
+    "Topics Mastered": Trophy,
+    "Topics In Progress": Activity,
+    "Weakest Topic": Target,
+    "Longest Learning Streak": Flame,
+    "Most Consistent Week": Calendar,
+    "Learning Velocity": LineChart,
+  };
 
   return (
-    <div className="p-6 lg:p-8 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <h1 className="text-2xl font-bold text-white">
-            Good{" "}
-            {new Date().getHours() < 12
-              ? "morning"
-              : new Date().getHours() < 17
-              ? "afternoon"
-              : "evening"}
-            ,{" "}
-            <span className="gradient-text">
-              {session?.user?.name?.split(" ")[0] || "there"}
-            </span>{" "}
-            👋
-          </h1>
-        </div>
-        <p className="text-gray-400 text-sm">
-          {new Date().toLocaleDateString("en-US", {
-            weekday: "long",
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-          })}
-        </p>
-      </div>
+    <div className="relative mx-auto max-w-7xl overflow-hidden p-5 sm:p-6 lg:p-8">
+      <div className="pointer-events-none absolute left-1/2 top-0 h-96 w-96 -translate-x-1/2 rounded-full bg-blue-500/20 blur-3xl" />
+      <div className="pointer-events-none absolute right-0 top-40 h-80 w-80 rounded-full bg-purple-600/20 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-20 left-0 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
 
-      {/* Productivity Score */}
-      {loading ? (
-        <Skeleton className="h-24 w-full rounded-xl mb-6" />
-      ) : (
-        <div className="mb-6 p-5 rounded-xl bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center">
-              <TrendingUp className="w-6 h-6 text-white" />
-            </div>
+      <div className="relative space-y-6">
+        <section className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#05070F]/80 p-6 shadow-2xl shadow-purple-950/20 backdrop-blur-xl sm:p-8">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.22),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(168,85,247,0.18),transparent_30%)]" />
+          <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-purple-400/50 to-transparent" />
+
+          <div className="relative grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
             <div>
-              <p className="text-sm text-gray-400 mb-1">Productivity Score</p>
-              <div className="flex items-center gap-3">
-                <span className="text-3xl font-bold text-white">
-                  {data?.stats.productivityScore ?? 0}%
-                </span>
-                <div className="w-32">
-                  <Progress value={data?.stats.productivityScore ?? 0} />
+              <Badge className="mb-5 border-blue-400/30 bg-blue-500/10 text-blue-200">
+                <Sparkles className="mr-1 h-3 w-3" />
+                AI Growth Operating System
+              </Badge>
+
+              <p className="text-sm font-medium text-gray-300">
+                Good Morning,{" "}
+                <span className="gradient-text font-semibold">{firstName}</span>{" "}
+                👋
+              </p>
+              <h1 className="mt-3 max-w-3xl text-3xl font-bold tracking-tight text-white sm:text-5xl">
+                Today&apos;s AI Growth Brief
+              </h1>
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-gray-400 sm:text-base">
+                Your command center is optimizing Planner, Study Tracker,
+                LeetCode, Coding Hub, Second Brain, Resume, Career Hub and AI
+                Coach into one mission: the next best action for your dream
+                career.
+              </p>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {loading
+                  ? Array.from({ length: 5 }).map((_, index) => (
+                      <Skeleton key={index} className="h-20 rounded-2xl" />
+                    ))
+                  : heroStats.map((stat) => (
+                      <div
+                        key={stat.label}
+                        className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:border-blue-400/30"
+                      >
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">
+                          {stat.label}
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-white sm:text-base">
+                          {stat.value}
+                        </p>
+                      </div>
+                    ))}
+              </div>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                {recommendations.map((recommendation) => (
+                  <div
+                    key={recommendation}
+                    className="flex items-center gap-3 rounded-2xl border border-emerald-400/10 bg-emerald-400/[0.04] px-4 py-3 text-sm text-gray-200"
+                  >
+                    <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-emerald-300" />
+                    {recommendation}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-7 flex flex-col gap-4 sm:flex-row sm:items-center">
+                <Button
+                  asChild
+                  size="lg"
+                  className="h-12 rounded-2xl bg-gradient-to-r from-blue-500 to-purple-600 px-6 text-white shadow-lg shadow-purple-600/25 transition-transform hover:scale-[1.02]"
+                >
+                  <Link href="/coding-hub">
+                    Start Today&apos;s Mission
+                    <Rocket className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <p className="text-sm text-blue-100/80">
+                  Completing today&apos;s plan increases your Google readiness
+                  by{" "}
+                  <span className="font-semibold text-white">
+                    {growth?.readinessIncrease ?? 0}%
+                  </span>
+                  .
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-white/10 bg-black/20 p-5 backdrop-blur">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-gray-500">
+                    Next best action
+                  </p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">
+                    Solve Medium Graph Question
+                  </h3>
+                </div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-500/15 text-purple-200">
+                  <Target className="h-5 w-5" />
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <span className="text-gray-400">Google readiness</span>
+                    <span className="font-medium text-white">
+                      {companyReadinessItems[0]?.readiness ?? 0}%
+                    </span>
+                  </div>
+                  <Progress
+                    value={companyReadinessItems[0]?.readiness ?? 0}
+                    className="h-2.5"
+                  />
+                </div>
+                <div>
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <span className="text-gray-400">Study system confidence</span>
+                    <span className="font-medium text-white">
+                      {studyCompletion}%
+                    </span>
+                  </div>
+                  <Progress value={studyCompletion} className="h-2.5" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-white/[0.04] p-4">
+                    <p className="text-xs text-gray-500">Focus</p>
+                    <p className="mt-1 font-semibold text-white">{focus.topic}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white/[0.04] p-4">
+                    <p className="text-xs text-gray-500">Time</p>
+                    <p className="mt-1 font-semibold text-white">
+                      {focus.estimatedTime}
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-blue-400/10 bg-blue-400/[0.05] p-4">
+                  <p className="text-sm leading-6 text-blue-100/90">
+                    {focus.reason} This is the fastest visible readiness gain
+                    Zentric found from your connected modules.
+                  </p>
                 </div>
               </div>
             </div>
           </div>
-          <Link href="/chat">
-            <Button variant="outline" size="sm" className="border-purple-500/30 text-purple-400 hover:bg-purple-500/10">
-              <MessageSquare className="w-4 h-4 mr-2" />
-              Ask AI
-            </Button>
-          </Link>
-        </div>
-      )}
+        </section>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {loading
-          ? Array(4)
-              .fill(0)
-              .map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)
-          : statCards.map((stat) => (
-              <Link key={stat.title} href={stat.href}>
-                <Card className="hover:border-white/20 transition-all hover:-translate-y-0.5 cursor-pointer">
-                  <CardContent className="p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className={`p-2 rounded-lg ${stat.bg}`}>
-                        <stat.icon className={`w-4 h-4 ${stat.color}`} />
-                      </div>
-                      <ArrowRight className="w-3 h-3 text-gray-600" />
-                    </div>
-                    <div className="text-2xl font-bold text-white mb-1">
-                      {stat.value}
-                      {stat.total !== null && (
-                        <span className="text-sm font-normal text-gray-500">
-                          /{stat.total}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">{stat.title}</p>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* Today's Tasks */}
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-gray-300 flex items-center gap-2">
-                  <CheckSquare className="w-4 h-4 text-green-400" />
-                  Today&apos;s Tasks
-                </CardTitle>
-                <Link href="/planner">
-                  <Button variant="ghost" size="sm" className="text-xs text-gray-500 hover:text-white h-7">
-                    View all <ArrowRight className="w-3 h-3 ml-1" />
-                  </Button>
-                </Link>
+        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+          <GlassPanel>
+            <SectionHeader
+              icon={BarChart3}
+              eyebrow="Mission Progress"
+              title={missionProgress.mission}
+            />
+            <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                    Overall Progress
+                  </p>
+                  <p className="mt-2 text-4xl font-bold text-white">
+                    {missionProgress.overallProgress}%
+                  </p>
+                </div>
+                <ProgressRing
+                  value={missionProgress.overallProgress}
+                  label="Mission"
+                />
               </div>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="space-y-2">
-                  {Array(3).fill(0).map((_, i) => (
-                    <Skeleton key={i} className="h-10 rounded-lg" />
-                  ))}
-                </div>
-              ) : data?.todaysTasks.length === 0 ? (
-                <div className="text-center py-6">
-                  <CheckSquare className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                  <p className="text-gray-500 text-sm">No tasks today</p>
-                  <Link href="/planner">
-                    <Button variant="ghost" size="sm" className="mt-2 text-purple-400">
-                      Add a task
-                    </Button>
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {data?.todaysTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className="flex items-center gap-3 p-2.5 rounded-lg bg-white/3 border border-white/5"
-                    >
-                      <div
-                        className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                          task.completed ? "bg-green-400" : "bg-yellow-400"
-                        }`}
-                      />
-                      <span
-                        className={`text-sm flex-1 ${
-                          task.completed
-                            ? "line-through text-gray-500"
-                            : "text-gray-300"
-                        }`}
-                      >
-                        {task.title}
-                      </span>
-                      <Badge
-                        variant={
-                          task.priority === "high"
-                            ? "destructive"
-                            : task.priority === "medium"
-                            ? "warning"
-                            : "secondary"
-                        }
-                      >
-                        {task.priority}
+            </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+              {missionProgress.breakdown.map((item) => (
+                <ProgressRing
+                  key={item.label}
+                  value={item.value}
+                  label={item.label}
+                  color={item.color}
+                  size="sm"
+                />
+              ))}
+            </div>
+          </GlassPanel>
+
+          <GlassPanel>
+            <SectionHeader
+              icon={ShieldCheck}
+              eyebrow="AI Readiness Engine"
+              title="Recruiter Readiness"
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {companyReadinessItems.map((company) => (
+                <button
+                  key={company.company}
+                  type="button"
+                  onClick={() => setSelectedCompany(company)}
+                  className={`rounded-2xl border p-4 text-left transition-all duration-300 hover:-translate-y-0.5 ${
+                    selectedCompany.company === company.company
+                      ? "border-purple-400/50 bg-purple-500/10 shadow-lg shadow-purple-950/20"
+                      : "border-white/10 bg-white/[0.03] hover:border-white/20"
+                  }`}
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="font-semibold text-white">{company.company}</h3>
+                    <span className="text-lg font-bold text-blue-200">
+                      {company.readiness}%
+                    </span>
+                  </div>
+                  <Progress value={company.readiness} className="mb-3 h-2" />
+                  <p className="text-xs text-gray-400">
+                    Weakest: {company.weakest}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Prep time: {company.prepTime}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {company.missing.map((topic) => (
+                      <Badge key={topic} variant="outline" className="text-[10px]">
+                        {topic}
                       </Badge>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 rounded-2xl border border-blue-400/10 bg-blue-500/[0.05] p-5">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-blue-200/70">
+                    Detailed roadmap
+                  </p>
+                  <h3 className="mt-1 text-lg font-semibold text-white">
+                    {selectedCompany.company} readiness path
+                  </h3>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Upcoming Deadlines */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-300 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-orange-400" />
-                Upcoming Deadlines
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-20 rounded-lg" />
-              ) : data?.upcomingDeadlines.length === 0 ? (
-                <p className="text-gray-500 text-sm text-center py-4">
-                  No upcoming deadlines
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {data?.upcomingDeadlines.map((task) => (
-                    <div key={task.id} className="flex items-center justify-between p-2.5 rounded-lg bg-white/3 border border-white/5">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-3 h-3 text-orange-400 flex-shrink-0" />
-                        <span className="text-sm text-gray-300">{task.title}</span>
-                      </div>
-                      <span className="text-xs text-orange-400">
-                        {formatDate(task.deadline)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right column */}
-        <div className="space-y-6">
-          {/* AI Suggestions */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-300 flex items-center gap-2">
-                <Zap className="w-4 h-4 text-purple-400" />
-                AI Suggestions
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {aiSuggestions.map((suggestion, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-2 p-2.5 rounded-lg bg-purple-500/5 border border-purple-500/10"
-                  >
-                    <div className="w-5 h-5 rounded-full bg-purple-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <span className="text-xs text-purple-400 font-bold">{i + 1}</span>
-                    </div>
-                    <p className="text-xs text-gray-400 leading-relaxed">{suggestion}</p>
+                <Badge>{selectedCompany.readiness}% ready</Badge>
+              </div>
+              <div className="space-y-3">
+                {selectedCompany.roadmap.map((step, index) => (
+                  <div key={step} className="flex gap-3 text-sm text-gray-300">
+                    <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-400/10 text-xs font-semibold text-blue-200">
+                      {index + 1}
+                    </span>
+                    <p className="leading-6">{step}</p>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Goals */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-gray-300 flex items-center gap-2">
-                  <Target className="w-4 h-4 text-purple-400" />
-                  Goals
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-20 rounded-lg" />
-              ) : data?.goals.length === 0 ? (
-                <p className="text-gray-500 text-sm text-center py-4">No goals yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {data?.goals.map((goal) => (
-                    <div key={goal.id}>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-gray-300 truncate">{goal.title}</span>
-                        <span className="text-gray-500 ml-2 flex-shrink-0">
-                          {goal.progress}/{goal.target}
-                        </span>
-                      </div>
-                      <Progress value={(goal.progress / goal.target) * 100} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            </div>
+          </GlassPanel>
         </div>
+
+        <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+          <GlassPanel>
+            <SectionHeader
+              icon={Calendar}
+              eyebrow="Today's Roadmap"
+              title="Today's Growth Plan"
+            />
+            <div className="space-y-4">
+              {growthPlanItems.map((item, index) => (
+                <Link
+                  key={`${item.time}-${item.title}`}
+                  href={item.href}
+                  className="group grid gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-blue-400/30 hover:bg-blue-500/[0.04] sm:grid-cols-[72px_1fr_auto]"
+                >
+                  <div className="flex items-center gap-3 sm:block">
+                    <p className="text-lg font-bold text-white">{item.time}</p>
+                    <div className="mt-0 hidden h-8 w-px bg-gradient-to-b from-purple-400 to-transparent sm:ml-5 sm:mt-2 sm:block" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-500/10 text-xs font-semibold text-purple-200">
+                        {index + 1}
+                      </span>
+                      <h3 className="font-semibold text-white">{item.title}</h3>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Badge variant="secondary">
+                        <Clock className="mr-1 h-3 w-3" />
+                        {item.duration}
+                      </Badge>
+                      <Badge
+                        variant={
+                          item.priority === "Critical" ? "destructive" : "warning"
+                        }
+                      >
+                        Priority: {item.priority}
+                      </Badge>
+                      <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
+                        Growth impact {item.impact}
+                      </Badge>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 self-center text-gray-600 transition-transform group-hover:translate-x-1 group-hover:text-blue-200" />
+                </Link>
+              ))}
+            </div>
+          </GlassPanel>
+
+          <GlassPanel>
+            <SectionHeader icon={Bot} eyebrow="AI Coach" title="Coach Signals" />
+            <div className="space-y-3">
+              {coachSignalItems.map((signal) => (
+                <div
+                  key={signal.insight}
+                  className="rounded-2xl border border-purple-400/10 bg-purple-500/[0.05] p-4"
+                >
+                  <p className="text-sm leading-6 text-gray-200">{signal.insight}</p>
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="ghost"
+                    className="mt-3 h-8 rounded-full text-purple-200 hover:bg-purple-500/10"
+                  >
+                    <Link href={signal.href}>
+                      {signal.action}
+                      <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </GlassPanel>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-3">
+          <GlassPanel>
+            <SectionHeader
+              icon={Brain}
+              eyebrow="Knowledge Retention"
+              title="Memory Health"
+            />
+            <div className="space-y-3">
+              {retentionItems.map((stat) => (
+                <div
+                  key={stat.label}
+                  className="flex items-center justify-between rounded-2xl bg-white/[0.03] px-4 py-3"
+                >
+                  <span className="text-sm text-gray-400">{stat.label}</span>
+                  <span className="font-semibold text-white">{stat.value}</span>
+                </div>
+              ))}
+            </div>
+          </GlassPanel>
+
+          <GlassPanel className="xl:col-span-2">
+            <SectionHeader
+              icon={GraduationCap}
+              eyebrow="Learning Analytics"
+              title="Skill Momentum"
+            />
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {learningAnalyticsItems.map((metric) => (
+                <MetricCard
+                  key={metric.label}
+                  label={metric.label}
+                  value={metric.value}
+                  icon={learningIconMap[metric.label] ?? Activity}
+                />
+              ))}
+            </div>
+          </GlassPanel>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
+          <GlassPanel>
+            <SectionHeader
+              icon={Code2}
+              eyebrow="LeetCode Insights"
+              title="Interview Pattern Intelligence"
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {leetcodeInsightItems.map((insight) => (
+                <div
+                  key={insight.label}
+                  className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+                >
+                  <p className="text-xs text-gray-500">{insight.label}</p>
+                  <p className="mt-2 text-base font-semibold text-white">
+                    {insight.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </GlassPanel>
+
+          <GlassPanel>
+            <SectionHeader
+              icon={BookOpen}
+              eyebrow="Second Brain Summary"
+              title="Knowledge Graph"
+            />
+            <div className="space-y-3">
+              {secondBrainSummary.map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3"
+                >
+                  <span className="text-sm text-gray-400">{item.label}</span>
+                  <span className="text-sm font-semibold text-white">
+                    {item.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </GlassPanel>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+          <GlassPanel>
+            <SectionHeader
+              icon={Briefcase}
+              eyebrow="Career Progress"
+              title="Career Launch System"
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              {careerProgressItems.map((item) => (
+                <div key={item.label} className="rounded-2xl bg-white/[0.03] p-4">
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span className="text-gray-400">{item.label}</span>
+                    <span className="font-semibold text-white">{item.value}%</span>
+                  </div>
+                  <Progress value={item.value} />
+                </div>
+              ))}
+            </div>
+          </GlassPanel>
+
+          <div className="grid gap-6">
+            <GlassPanel>
+              <SectionHeader icon={Zap} eyebrow="Focus Mode" title="Today's Focus" />
+              <div className="rounded-2xl border border-purple-400/20 bg-gradient-to-br from-purple-500/10 to-blue-500/10 p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-3xl font-bold text-white">
+                      {focus.topic}
+                    </h3>
+                    <p className="mt-2 text-sm text-gray-400">
+                      Priority:{" "}
+                      <span className="font-semibold text-red-300">
+                        {focus.priority}
+                      </span>
+                    </p>
+                    <p className="text-sm text-gray-400">
+                      Estimated Time:{" "}
+                      <span className="font-semibold text-white">
+                        {focus.estimatedTime}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-200">
+                    <GitBranch className="h-5 w-5" />
+                  </div>
+                </div>
+                <p className="mt-5 text-sm leading-6 text-gray-300">
+                  Reason: {focus.reason}
+                </p>
+              </div>
+            </GlassPanel>
+
+            <GlassPanel>
+              <SectionHeader icon={Lightbulb} eyebrow="Motivation" title="AI Momentum" />
+              <div className="rounded-2xl border border-emerald-400/10 bg-emerald-400/[0.05] p-5">
+                <p className="text-lg font-semibold leading-7 text-white">
+                  {motivation}
+                </p>
+                <p className="mt-3 text-sm leading-6 text-gray-400">
+                  This message is generated from your current tasks, study
+                  topics, notes, goals, and LeetCode sync when connected.
+                </p>
+              </div>
+            </GlassPanel>
+          </div>
+        </div>
+
+        <GlassPanel>
+          <SectionHeader
+            icon={Star}
+            eyebrow="Recent Achievements"
+            title="Proof That The System Is Working"
+          />
+          <div className="grid gap-3 md:grid-cols-5">
+            {recentAchievementItems.map((achievement, index) => (
+              <div
+                key={achievement}
+                className="relative rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition-all duration-300 hover:-translate-y-1 hover:border-yellow-300/30"
+              >
+                <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-full bg-yellow-300/10 text-yellow-200">
+                  <Trophy className="h-4 w-4" />
+                </div>
+                <p className="text-sm font-medium leading-6 text-white">
+                  {achievement}
+                </p>
+                <p className="mt-3 text-xs text-gray-500">Milestone {index + 1}</p>
+              </div>
+            ))}
+          </div>
+        </GlassPanel>
       </div>
     </div>
   );

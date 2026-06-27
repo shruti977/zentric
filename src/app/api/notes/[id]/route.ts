@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+const noteCategories = new Set([
+  "second_brain",
+  "learning",
+  "interview",
+  "project",
+  "research",
+]);
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -28,6 +36,10 @@ export async function PATCH(
       title: body.title ?? note.title,
       content: body.content !== undefined ? body.content : note.content,
       tags: body.tags !== undefined ? body.tags : note.tags,
+      category:
+        typeof body.category === "string" && noteCategories.has(body.category)
+          ? body.category
+          : note.category,
     },
   });
 

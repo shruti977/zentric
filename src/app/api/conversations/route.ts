@@ -30,10 +30,12 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const title = body.title || "New Conversation";
+  const systemPrompt = body.systemPrompt ?? null;
 
   const conversation = await prisma.conversation.create({
     data: {
       title,
+      systemPrompt,
       userId: session.user.id,
     },
   });

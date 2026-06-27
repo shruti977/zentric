@@ -39,6 +39,7 @@ model User {
   id            String    @id @default(cuid())
   name          String?
   email         String?   @unique
+  passwordHash  String?
   emailVerified DateTime?
   image         String?
   createdAt     DateTime  @default(now())
@@ -47,8 +48,11 @@ model User {
   tasks         Task[]
   goals         Goal[]
   studyTopics   StudyTopic[]
+  practiceProgress StudyPracticeProgress[]
   notes         Note[]
   conversations Conversation[]
+  careerProfile CareerProfile?
+  jobApplications JobApplication[]
   settings      UserSettings?
 }
 
@@ -95,6 +99,22 @@ model StudyTopic {
   updatedAt  DateTime @updatedAt
   userId     String
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  practiceProgress StudyPracticeProgress[]
+}
+
+model StudyPracticeProgress {
+  id           String     @id @default(cuid())
+  questionId   String
+  completedAt  DateTime   @default(now())
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  userId       String
+  studyTopicId String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studyTopic   StudyTopic @relation(fields: [studyTopicId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, studyTopicId, questionId])
+  @@index([studyTopicId])
 }
 
 model Note {
@@ -102,6 +122,7 @@ model Note {
   title     String
   content   String
   tags      String?
+  category  String   @default("second_brain")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   userId    String
@@ -109,13 +130,14 @@ model Note {
 }
 
 model Conversation {
-  id        String    @id @default(cuid())
-  title     String    @default("New Conversation")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages  Message[]
+  id           String    @id @default(cuid())
+  title        String    @default("New Conversation")
+  systemPrompt String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     Message[]
 }
 
 model Message {
@@ -125,6 +147,40 @@ model Message {
   content        String
   createdAt      DateTime     @default(now())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model CareerProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  dreamRole         String   @default("Your Dream Role")
+  targetCompany     String   @default("Your Target Company")
+  resumeText        String?
+  skillsText        String?
+  projectsText      String?
+  experienceText    String?
+  educationText     String?
+  preferredKeywords String?
+  jobDescriptionText String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model JobApplication {
+  id        String    @id @default(cuid())
+  company   String
+  role      String
+  status    String    @default("wishlist")
+  location  String?
+  url       String?
+  notes     String?
+  appliedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
 }
 
 model UserSettings {

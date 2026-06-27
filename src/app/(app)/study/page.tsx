@@ -13,6 +13,8 @@ import {
   X,
   Check,
   BarChart3,
+  ChevronRight,
+  Code2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,6 +46,24 @@ interface StudyTopic {
   difficulty: string;
   notes?: string | null;
   createdAt: string;
+  updatedAt?: string;
+}
+
+interface PracticeQuestion {
+  id: string;
+  title: string;
+  topic: string;
+  difficulty: "Easy" | "Medium" | "Hard";
+  estimatedMinutes: number;
+  completed: boolean;
+}
+
+interface TopicPractice {
+  topic: StudyTopic;
+  completedCount: number;
+  totalQuestions: number;
+  progressPercent: number;
+  questions: PracticeQuestion[];
 }
 
 const statusConfig = {
@@ -66,6 +86,9 @@ export default function StudyPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [practiceByTopic, setPracticeByTopic] = useState<Record<string, TopicPractice>>({});
+  const [selectedPractice, setSelectedPractice] = useState<TopicPractice | null>(null);
+  const [practiceLoading, setPracticeLoading] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
     category: "DSA",
@@ -76,12 +99,34 @@ export default function StudyPage() {
   const fetchTopics = async () => {
     const res = await fetch("/api/study");
     const data = await res.json();
-    setTopics(Array.isArray(data) ? data : []);
+    const topicList = Array.isArray(data) ? data : [];
+    const practiceEntries = await Promise.all(
+      topicList.map(async (topic: StudyTopic) => {
+        try {
+          const practiceRes = await fetch(`/api/study/${topic.id}/practice`);
+          if (!practiceRes.ok) return null;
+          const practice = (await practiceRes.json()) as TopicPractice;
+          return [topic.id, practice] as const;
+        } catch {
+          return null;
+        }
+      })
+    );
+    const nextPractice = Object.fromEntries(
+      practiceEntries.filter((entry): entry is readonly [string, TopicPractice] => Boolean(entry))
+    );
+    setPracticeByTopic(nextPractice);
+    setTopics(
+      topicList.map((topic: StudyTopic) => nextPractice[topic.id]?.topic ?? topic)
+    );
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchTopics();
+    const frame = window.requestAnimationFrame(() => {
+      fetchTopics();
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   const handleAdd = async () => {
@@ -98,17 +143,9 @@ export default function StudyPage() {
     fetchTopics();
   };
 
-  const updateStatus = async (id: string, status: string) => {
-    await fetch(`/api/study/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    fetchTopics();
-  };
-
   const deleteTopic = async (id: string) => {
     await fetch(`/api/study/${id}`, { method: "DELETE" });
+    if (selectedPractice?.topic.id === id) setSelectedPractice(null);
     fetchTopics();
   };
 
@@ -119,6 +156,22 @@ export default function StudyPage() {
       body: JSON.stringify({ name, category: "DSA", difficulty: "medium" }),
     });
     fetchTopics();
+  };
+
+  const openPractice = async (topicId: string) => {
+    if (practiceByTopic[topicId]) {
+      setSelectedPractice(practiceByTopic[topicId]);
+      return;
+    }
+
+    setPracticeLoading(topicId);
+    const res = await fetch(`/api/study/${topicId}/practice`);
+    const data = await res.json();
+    setPracticeLoading(null);
+
+    if (!res.ok) return;
+    setPracticeByTopic((current) => ({ ...current, [topicId]: data }));
+    setSelectedPractice(data);
   };
 
   const filteredTopics = topics.filter((t) => {
@@ -268,6 +321,10 @@ export default function StudyPage() {
           {filteredTopics.map((topic) => {
             const status = statusConfig[topic.status as keyof typeof statusConfig] || statusConfig.not_started;
             const StatusIcon = status.icon;
+            const practice = practiceByTopic[topic.id];
+            const completedCount = practice?.completedCount ?? 0;
+            const totalQuestions = practice?.totalQuestions ?? 25;
+            const progressPercent = practice?.progressPercent ?? 0;
             return (
               <div
                 key={topic.id}
@@ -301,26 +358,120 @@ export default function StudyPage() {
                 {topic.notes && (
                   <p className="text-xs text-gray-500 mb-3 line-clamp-2">{topic.notes}</p>
                 )}
-                <div className="flex items-center gap-2">
-                  <StatusIcon className={`w-3.5 h-3.5 ${status.color}`} />
-                  <Select
-                    value={topic.status}
-                    onValueChange={(v) => updateStatus(topic.id, v)}
+                <div className="mb-3 rounded-lg border border-white/8 bg-black/20 p-3">
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <span className="text-gray-400">Question progress</span>
+                    <span className="font-semibold text-white">
+                      {completedCount}/{totalQuestions}
+                    </span>
+                  </div>
+                  <Progress value={progressPercent} />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <StatusIcon className={`w-3.5 h-3.5 ${status.color}`} />
+                    <Badge variant={status.bg} className="capitalize">
+                      {status.label}
+                    </Badge>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => openPractice(topic.id)}
+                    disabled={practiceLoading === topic.id}
+                    className="h-8 rounded-lg text-xs text-blue-300 hover:bg-blue-500/10"
                   >
-                    <SelectTrigger className="h-7 text-xs flex-1 border-white/10">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="not_started">Not Started</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    {practiceLoading === topic.id ? (
+                      <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                    ) : (
+                      <Code2 className="mr-1.5 h-3 w-3" />
+                    )}
+                    25 Questions
+                  </Button>
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {selectedPractice && (
+        <Card className="mt-6 overflow-hidden border-blue-500/20 bg-blue-500/[0.035]">
+          <CardHeader className="border-b border-white/8 pb-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-white">
+                  <Code2 className="h-5 w-5 text-blue-300" />
+                  {selectedPractice.topic.name} Practice Path
+                </CardTitle>
+                <p className="mt-2 text-sm text-gray-400">
+                  Complete all 25 questions to mark this topic completed.
+                </p>
+              </div>
+              <div className="min-w-[220px] rounded-xl border border-white/10 bg-black/20 p-3">
+                <div className="mb-2 flex items-center justify-between text-xs">
+                  <span className="text-gray-400">Topic completion</span>
+                  <span className="font-semibold text-white">
+                    {selectedPractice.completedCount}/{selectedPractice.totalQuestions}
+                  </span>
+                </div>
+                <Progress value={selectedPractice.progressPercent} />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4">
+            <div className="grid gap-2 md:grid-cols-2">
+              {selectedPractice.questions.map((question, index) => {
+                const href = `/coding-hub?studyTopicId=${encodeURIComponent(
+                  selectedPractice.topic.id
+                )}&topic=${encodeURIComponent(selectedPractice.topic.name)}&questionId=${encodeURIComponent(
+                  question.id
+                )}`;
+
+                return (
+                  <a
+                    key={question.id}
+                    href={href}
+                    className="group flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.03] p-3 transition hover:-translate-y-0.5 hover:border-blue-400/35 hover:bg-blue-500/[0.06]"
+                  >
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                        question.completed
+                          ? "bg-emerald-500/15 text-emerald-300"
+                          : "bg-white/8 text-gray-300"
+                      }`}
+                    >
+                      {question.completed ? <Check className="h-4 w-4" /> : index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-medium text-white">
+                          {question.title}
+                        </p>
+                        <Badge
+                          variant={
+                            question.difficulty === "Hard"
+                              ? "destructive"
+                              : question.difficulty === "Medium"
+                                ? "warning"
+                                : "success"
+                          }
+                          className="text-[10px]"
+                        >
+                          {question.difficulty}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {question.estimatedMinutes} min • opens in Coding Hub
+                      </p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-gray-600 transition group-hover:translate-x-1 group-hover:text-blue-300" />
+                  </a>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Add Topic Dialog */}

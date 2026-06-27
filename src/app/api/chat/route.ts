@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Groq from "groq-sdk";
+import OpenAI from "openai";
 
 const SYSTEM_PROMPT = `You are Zentric AI, a helpful assistant integrated into the Zentric AI Growth Operating System.
 You help students, developers, and professionals with:
@@ -13,6 +14,47 @@ You help students, developers, and professionals with:
 - Code review and debugging
 
 Be concise, practical, and encouraging. Format responses with markdown when helpful.`;
+
+type AIMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+async function* createAIResponse(messages: AIMessage[]) {
+  if (process.env.GROQ_API_KEY) {
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const stream = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages,
+      temperature: 0.7,
+      max_tokens: 1200,
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      yield chunk.choices[0]?.delta?.content ?? "";
+    }
+    return;
+  }
+
+  if (process.env.OPENAI_API_KEY) {
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const stream = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      messages,
+      temperature: 0.7,
+      max_tokens: 1200,
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      yield chunk.choices[0]?.delta?.content ?? "";
+    }
+    return;
+  }
+
+  throw new Error("AI_PROVIDER_NOT_CONFIGURED");
+}
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -47,37 +89,17 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const apiKey = process.env.GROQ_API_KEY;
-
-  if (!apiKey) {
-    const fallback = `I am Zentric AI! AI responses require a Groq API key to be configured.\n\nYour message: "${message}"`;
-    await prisma.message.create({
-      data: { conversationId, role: "assistant", content: fallback },
-    });
-    return new Response(JSON.stringify({ content: fallback }), {
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
   try {
-    const groq = new Groq({ apiKey });
-
     const history = conversation.messages.map((m: { role: string; content: string }) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
 
-    const groqStream = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+    const aiStream = createAIResponse([
+        { role: "system", content: conversation.systemPrompt ?? SYSTEM_PROMPT },
         ...history,
         { role: "user", content: message.trim() },
-      ],
-      temperature: 0.7,
-      max_tokens: 1024,
-      stream: true,
-    });
+    ]);
 
     const encoder = new TextEncoder();
     let fullContent = "";
@@ -85,21 +107,30 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of groqStream) {
-            const text = chunk.choices[0]?.delta?.content ?? "";
+          for await (const text of aiStream) {
             if (text) {
               fullContent += text;
               controller.enqueue(encoder.encode(text));
             }
           }
+          if (fullContent) {
+            await prisma.message.create({
+              data: { conversationId, role: "assistant", content: fullContent },
+            });
+            await prisma.conversation.update({
+              where: { id: conversationId },
+              data: { updatedAt: new Date() },
+            });
+          }
+        } catch (streamError) {
+          console.error("AI stream error:", streamError);
+          controller.enqueue(
+            encoder.encode(
+              fullContent ||
+                "The AI provider is unavailable right now. Check the configured API key and try again.",
+            ),
+          );
         } finally {
-          await prisma.message.create({
-            data: { conversationId, role: "assistant", content: fullContent },
-          });
-          await prisma.conversation.update({
-            where: { id: conversationId },
-            data: { updatedAt: new Date() },
-          });
           controller.close();
         }
       },
@@ -111,8 +142,12 @@ export async function POST(req: NextRequest) {
         "X-Content-Type-Options": "nosniff",
       },
     });
-  } catch {
-    const errorMsg = "Sorry, I encountered an error connecting to the AI. Please try again.";
+  } catch (error) {
+    console.error("AI request error:", error);
+    const errorMsg =
+      error instanceof Error && error.message === "AI_PROVIDER_NOT_CONFIGURED"
+        ? "No AI provider is configured. Add GROQ_API_KEY or OPENAI_API_KEY to enable agent responses."
+        : "Sorry, I encountered an error connecting to the AI. Please try again.";
     await prisma.message.create({
       data: { conversationId, role: "assistant", content: errorMsg },
     });
