@@ -1,0 +1,6 @@
+.vercel
+dev.db
+tmp
+output
+docs
+scripts/generate_academic_pdfs.py
