@@ -196,6 +196,87 @@ function withIds(questions: Omit<InterviewQuestion, "id">[], role: string) {
   }));
 }
 
+function deepenQuestion(
+  question: Omit<InterviewQuestion, "id">,
+  {
+    role,
+    company,
+    difficulty,
+  }: {
+    role: string;
+    company: string;
+    difficulty: string;
+  },
+): Omit<InterviewQuestion, "id"> {
+  const isRealLevel = difficulty === "Real Interview" || difficulty === "Advanced";
+  const roleContext = `${role} at ${company}`;
+  const depthSignalsByMode: Record<string, string[]> = {
+    DSA: [
+      "clarifying questions",
+      "brute force baseline",
+      "optimized pattern choice",
+      "dry run",
+      "edge cases",
+      "time and space complexity",
+      "what changes if constraints increase",
+    ],
+    "System Design": [
+      "functional and non-functional requirements",
+      "API contract",
+      "data model",
+      "scaling bottlenecks",
+      "failure handling",
+      "security/privacy",
+      "observability",
+      "tradeoffs",
+    ],
+    "Resume-based": [
+      "project context",
+      "your exact ownership",
+      "architecture",
+      "hardest technical decision",
+      "measurable impact",
+      "production issue or limitation",
+      "what you would improve next",
+    ],
+    HR: [
+      "specific situation",
+      "your action",
+      "conflict or constraint",
+      "measurable result",
+      "learning",
+      "why it proves fit for this role",
+    ],
+  };
+
+  const genericSignals = [
+    "problem breakdown",
+    "assumptions",
+    "technical choices",
+    "tradeoffs",
+    "edge cases",
+    "measurable outcome",
+    "follow-up depth",
+  ];
+  const depthSignals = depthSignalsByMode[question.mode] ?? genericSignals;
+  const pressure = isRealLevel
+    ? "Answer as if a senior interviewer is pushing for production depth and tradeoffs."
+    : "Answer like a real interview, not a short note.";
+
+  const questionText =
+    `${question.question}\n\n` +
+    `Interview depth required for ${roleContext}: ${pressure} Cover ${depthSignals.slice(0, 5).join(", ")}. ` +
+    `If you make an assumption, say it clearly. End with one risk/tradeoff and how you would handle a follow-up.`;
+
+  const extraIdealPoints = depthSignals.filter((point) => !question.idealPoints.includes(point));
+
+  return {
+    ...question,
+    question: questionText,
+    idealPoints: [...question.idealPoints, ...extraIdealPoints].slice(0, 10),
+  };
+}
+
 export function generateInterviewQuestions({
   mode,
   role,
@@ -222,30 +303,54 @@ export function generateInterviewQuestions({
   const dsaQuestions: Omit<InterviewQuestion, "id">[] = [
     {
       mode: "DSA",
-      question: `Solve a medium ${safeRole.includes("Frontend") ? "arrays/sliding window" : "graphs or dynamic programming"} problem aloud. How would you approach it ${depth}?`,
-      idealPoints: ["state brute force first", "explain optimized pattern", "mention complexity", "cover edge cases"],
+      question: `You are given a medium ${safeRole.includes("Frontend") ? "arrays/sliding window" : "graph or dynamic programming"} problem in a ${safeCompany} interview. Explain how you would solve it aloud from first principles ${depth}.`,
+      idealPoints: ["clarify input/output", "state brute force first", "explain optimized pattern", "dry run", "mention complexity", "cover edge cases"],
       skillArea: "Problem Solving",
     },
     {
       mode: "DSA",
-      question: "How do you decide between BFS, DFS, binary search, and dynamic programming in an interview problem?",
-      idealPoints: ["problem signals", "constraints", "state/graph structure", "complexity reasoning"],
+      question: "An interviewer gives you an unfamiliar problem. How do you decide whether the right direction is BFS, DFS, binary search, greedy, two pointers, or dynamic programming?",
+      idealPoints: ["problem signals", "constraints", "state/graph structure", "monotonic property", "overlapping subproblems", "complexity reasoning"],
       skillArea: "DSA Patterns",
+    },
+    {
+      mode: "DSA",
+      question: "Walk through how you would debug a solution that passes sample tests but fails hidden test cases.",
+      idealPoints: ["edge cases", "boundary values", "invariants", "dry run", "test generation", "complexity check"],
+      skillArea: "Debugging",
+    },
+    {
+      mode: "DSA",
+      question: "Explain how you would optimize a brute-force solution when constraints make it too slow.",
+      idealPoints: ["identify bottleneck", "choose data structure", "precomputation", "space-time tradeoff", "proof of correctness", "complexity"],
+      skillArea: "Optimization",
     },
   ];
 
   const hrQuestions: Omit<InterviewQuestion, "id">[] = [
     {
       mode: "HR",
-      question: `Why do you want ${safeRole} at ${safeCompany}, and what makes you ready now?`,
-      idealPoints: ["specific motivation", "role fit", "proof from work", "growth plan"],
+      question: `Why do you want ${safeRole} at ${safeCompany}, and what evidence from your work proves you are ready for this role now?`,
+      idealPoints: ["specific motivation", "company alignment", "role fit", "proof from work", "growth plan"],
       skillArea: "Motivation",
     },
     {
       mode: "HR",
-      question: "Tell me about a time you struggled or failed. What did you change after that?",
-      idealPoints: ["situation", "action", "result", "learning"],
+      question: "Tell me about a time you struggled, failed, or received tough feedback. What exactly did you change after that, and how did the result improve?",
+      idealPoints: ["situation", "task", "action", "result", "learning", "measurable improvement"],
       skillArea: "Behavioral Storytelling",
+    },
+    {
+      mode: "HR",
+      question: `Describe a time you had to learn something quickly for a project or exam. How would that learning style help you as a ${safeRole}?`,
+      idealPoints: ["learning strategy", "constraint", "execution", "result", "role connection"],
+      skillArea: "Learning Agility",
+    },
+    {
+      mode: "HR",
+      question: "Tell me about a time you disagreed with someone on a technical or project decision. How did you handle it?",
+      idealPoints: ["conflict context", "listening", "decision criteria", "tradeoff", "outcome"],
+      skillArea: "Collaboration",
     },
   ];
 
@@ -253,31 +358,55 @@ export function generateInterviewQuestions({
     {
       mode: "Resume-based",
       question: resumeUploaded
-        ? resumeQuestions[0] ?? "Pick your strongest resume project. Explain the architecture, impact, and hardest technical decision."
-        : "You have not uploaded a resume yet. Explain your strongest project as if it were on your resume.",
-      idealPoints: ["project goal", "tech stack", "your ownership", "impact", "tradeoffs"],
+        ? resumeQuestions[0] ?? "Pick your strongest resume project. Explain the architecture, impact, hardest technical decision, and what you would improve if users doubled."
+        : "You have not uploaded a resume yet. Explain your strongest project as if it were on your resume: architecture, ownership, metrics, tradeoffs, and limitations.",
+      idealPoints: ["project goal", "tech stack", "architecture", "your ownership", "impact", "tradeoffs", "limitations"],
       skillArea: "Resume Proof",
     },
     {
       mode: "Resume-based",
-      question: `Which skill is missing or weak for ${safeRole}, and what proof will you build in the next 7 days?`,
-      idealPoints: ["honest gap", "specific plan", "practice/project proof", "timeline"],
+      question: `Which skill is missing or weak for ${safeRole}, how would an interviewer notice that gap, and what proof will you build in the next 7 days?`,
+      idealPoints: ["honest gap", "interview signal", "specific plan", "practice/project proof", "timeline"],
       skillArea: "Gap Ownership",
+    },
+    {
+      mode: "Resume-based",
+      question: "Choose one resume bullet and defend it deeply: what problem did it solve, what design choices did you make, and what was the measurable outcome?",
+      idealPoints: ["resume bullet", "problem", "design choice", "technical depth", "metric", "reflection"],
+      skillArea: "Resume Defense",
+    },
+    {
+      mode: "Resume-based",
+      question: `If ${safeCompany} rejects your resume today, what are the three strongest improvements you would make and why?`,
+      idealPoints: ["target role gap", "project proof", "keywords", "metrics", "timeline"],
+      skillArea: "Resume Improvement",
     },
   ];
 
   const systemDesign: Omit<InterviewQuestion, "id">[] = [
     {
       mode: "System Design",
-      question: `Design a feature for ${safeCompany}: users upload data, receive AI analysis, and track progress over time.`,
-      idealPoints: ["requirements", "APIs", "database", "queues", "scaling", "security"],
+      question: `Design a feature for ${safeCompany}: users upload private documents, receive AI analysis, and track progress over time. Start from requirements and go to production design.`,
+      idealPoints: ["requirements", "APIs", "database", "queues", "scaling", "security", "privacy", "observability"],
       skillArea: "System Design",
     },
     {
       mode: "System Design",
-      question: "How would you make an interview simulation platform reliable, secure, and fast?",
-      idealPoints: ["auth", "rate limits", "data privacy", "async processing", "observability"],
+      question: "Design an interview simulation platform that supports saved sessions, AI scoring, follow-up questions, and progress tracking for thousands of users.",
+      idealPoints: ["requirements", "auth", "rate limits", "data privacy", "async processing", "observability", "failure handling"],
       skillArea: "Reliability",
+    },
+    {
+      mode: "System Design",
+      question: "Design the backend for a coding practice system where users submit code, run sample tests, receive review, and update topic progress.",
+      idealPoints: ["API design", "sandboxing", "queues", "test execution", "progress model", "security", "scaling"],
+      skillArea: "Coding System Design",
+    },
+    {
+      mode: "System Design",
+      question: "How would you design notifications/reminders that are optional, reliable, and respectful of user permission choices?",
+      idealPoints: ["user preference", "scheduler", "browser permission", "fallback", "data model", "rate limits"],
+      skillArea: "Notification Design",
     },
   ];
 
@@ -549,7 +678,16 @@ export function generateInterviewQuestions({
 
   const selected = pools[mode] ?? customInterview;
   const count = difficulty === "Beginner" ? 3 : mode === "custom" ? 5 : 4;
-  return withIds(selected.slice(0, count), safeRole);
+  return withIds(
+    selected.slice(0, count).map((question) =>
+      deepenQuestion(question, {
+        role: safeRole,
+        company: safeCompany,
+        difficulty,
+      }),
+    ),
+    safeRole,
+  );
 }
 
 function getAnswerQuality(answer: string, idealPoints: string[]) {
