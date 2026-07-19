@@ -258,6 +258,44 @@
     color: #1f2a37 !important;
   }
 
+  .zentric-light-main :is(button, a[role="button"], a[class*="rounded"]):is(
+    [class*="bg-white"],
+    [class*="bg-background"],
+    [class*="bg-[#FFFDF9]"],
+    [class*="bg-[#fffdf9]"],
+    [class*="bg-[#F7FAFD]"],
+    [class*="bg-[#f7fafd]"],
+    [class*="bg-[#F4F8FC]"],
+    [class*="bg-[#f4f8fc]"],
+    [class*="bg-slate-50"],
+    [class*="bg-slate-100"],
+    [class*="bg-gray-50"],
+    [class*="bg-gray-100"],
+    [class*="border-white/"],
+    [class*="border-input"]
+  ) {
+    color: #172033 !important;
+  }
+
+  .zentric-light-main :is(button, a[role="button"], a[class*="rounded"]):is(
+    [class*="bg-white"],
+    [class*="bg-background"],
+    [class*="bg-[#FFFDF9]"],
+    [class*="bg-[#fffdf9]"],
+    [class*="bg-[#F7FAFD]"],
+    [class*="bg-[#f7fafd]"],
+    [class*="bg-[#F4F8FC]"],
+    [class*="bg-[#f4f8fc]"],
+    [class*="bg-slate-50"],
+    [class*="bg-slate-100"],
+    [class*="bg-gray-50"],
+    [class*="bg-gray-100"],
+    [class*="border-white/"],
+    [class*="border-input"]
+  ) * {
+    color: inherit !important;
+  }
+
   .zentric-light-main :is(input, textarea, select) {
     background-color: #fffdf9 !important;
     color: #1f2a37 !important;
