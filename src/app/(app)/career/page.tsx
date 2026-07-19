@@ -1,19 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   AlertCircle,
   Bot,
   BriefcaseBusiness,
   Building2,
+  Camera,
   CheckCircle2,
   FileText,
   FileUp,
   Loader2,
   Mic,
+  Radio,
   SearchCheck,
+  Square,
   Target,
+  Timer,
+  Video,
   WandSparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +28,32 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  0: { transcript: string };
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: SpeechRecognitionResultLike;
+  };
+};
+
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 type CareerProfile = {
   dreamRole: string;
@@ -176,6 +207,27 @@ const targetRoles = [
 ];
 
 const interviewDifficulties = ["Beginner", "Intermediate", "Advanced", "Real Interview"] as const;
+
+const answerModes = [
+  {
+    id: "text",
+    label: "Text",
+    description: "Type your answer when mic/camera is not needed.",
+    icon: FileText,
+  },
+  {
+    id: "voice",
+    label: "Voice",
+    description: "Speak naturally; Zentric converts your answer into text for scoring.",
+    icon: Mic,
+  },
+  {
+    id: "camera",
+    label: "Camera",
+    description: "Practice in a focused interview room with camera preview and timer.",
+    icon: Camera,
+  },
+] as const;
 
 type InterviewQuestion = {
   id?: string;
@@ -331,6 +383,9 @@ function buildInterviewNoteContent({
 }
 
 export default function CareerHubPage() {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const finalTranscriptRef = useRef("");
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("resume");
   const [profile, setProfile] = useState<CareerProfile>(emptyProfile);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -355,6 +410,12 @@ export default function CareerHubPage() {
   const [interviewSessionId, setInterviewSessionId] = useState("");
   const [interviewSessions, setInterviewSessions] = useState<SavedInterviewSession[]>([]);
   const [interviewActionLoading, setInterviewActionLoading] = useState(false);
+  const [answerMode, setAnswerMode] = useState<(typeof answerModes)[number]["id"]>("text");
+  const [isListening, setIsListening] = useState(false);
+  const [voiceMessage, setVoiceMessage] = useState("");
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraMessage, setCameraMessage] = useState("");
+  const [sessionSeconds, setSessionSeconds] = useState(0);
 
   const syncMissionToInterview = useCallback((mission: CareerProfile) => {
     const role = mission.dreamRole.trim();
@@ -428,6 +489,19 @@ export default function CareerHubPage() {
     return () => window.cancelAnimationFrame(frame);
   }, [fetchCareer, fetchInterviewSessions]);
 
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = cameraStream;
+    }
+  }, [cameraStream]);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      cameraStream?.getTracks().forEach((track) => track.stop());
+    };
+  }, [cameraStream]);
+
   const isAnalyzed = Boolean(analysis?.isAnalyzed);
   const selectedCompany =
     analysis?.companies.find((company) => company.company === profile.targetCompany) ?? analysis?.companies[0] ?? null;
@@ -453,6 +527,7 @@ export default function CareerHubPage() {
     ]),
   ).filter(Boolean).slice(0, 6);
   const activeSimulationQuestion = simulationQuestions[currentSimulationIndex] ?? null;
+  const activeSimulationQuestionId = activeSimulationQuestion?.id ?? "";
   const activeScoredAnswer = simulationHistory.find((item) => item.questionIndex === currentSimulationIndex) ?? null;
   const simulationAverage = simulationHistory.length
     ? Math.round(simulationHistory.reduce((sum, item) => sum + item.score, 0) / simulationHistory.length)
@@ -464,6 +539,19 @@ export default function CareerHubPage() {
     ? "Custom Interview"
     : interviewModes.find((mode) => mode.id === simulationMode)?.label ?? "Interview";
   const interviewReport = simulationHistory.length ? buildInterviewReport(simulationHistory, hasResumeUpload) : null;
+  const spokenWordCount = simulationAnswer.trim().split(/\s+/).filter(Boolean).length;
+  const fillerWordCount = (simulationAnswer.match(/\b(um|uh|like|basically|actually|maybe|i guess)\b/gi) ?? []).length;
+  const sessionTimeLabel = `${Math.floor(sessionSeconds / 60)}:${String(sessionSeconds % 60).padStart(2, "0")}`;
+
+  useEffect(() => {
+    if (!activeSimulationQuestionId || simulationFinished) return;
+
+    const timer = window.setInterval(() => {
+      setSessionSeconds((seconds) => seconds + 1);
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [activeSimulationQuestionId, simulationFinished]);
 
   const rememberInterviewSession = (session: SavedInterviewSession) => {
     setInterviewSessions((current) => [session, ...current.filter((item) => item.id !== session.id)].slice(0, 12));
@@ -487,7 +575,122 @@ export default function CareerHubPage() {
     setSimulationAnswer("");
     setSimulationFeedback("");
     setSimulationFinished(session.status === "completed");
+    setSessionSeconds(0);
     setMessage(`Loaded saved interview for ${session.role}.`);
+  };
+
+  const stopVoiceCapture = useCallback(() => {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setIsListening(false);
+  }, []);
+
+  const startVoiceCapture = useCallback(() => {
+    setVoiceMessage("");
+
+    const speechWindow = window as Window &
+      typeof globalThis & {
+        SpeechRecognition?: SpeechRecognitionConstructor;
+        webkitSpeechRecognition?: SpeechRecognitionConstructor;
+      };
+    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+
+    if (!Recognition) {
+      setVoiceMessage("Voice mode is not supported in this browser. You can still type your answer.");
+      return;
+    }
+
+    recognitionRef.current?.stop();
+    finalTranscriptRef.current = simulationAnswer.trim();
+
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-IN";
+    recognition.onresult = (event) => {
+      let interimTranscript = "";
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        if (!result) continue;
+
+        if (result.isFinal) {
+          finalTranscriptRef.current = `${finalTranscriptRef.current} ${result[0].transcript}`.trim();
+        } else {
+          interimTranscript += result[0].transcript;
+        }
+      }
+
+      setSimulationAnswer(`${finalTranscriptRef.current} ${interimTranscript}`.trim());
+    };
+    recognition.onerror = () => {
+      setVoiceMessage("Mic permission was blocked or speech could not be captured. You can continue by typing.");
+      setIsListening(false);
+    };
+    recognition.onend = () => setIsListening(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+    setAnswerMode("voice");
+  }, [simulationAnswer]);
+
+  const stopCameraPreview = useCallback(() => {
+    setCameraStream((stream) => {
+      stream?.getTracks().forEach((track) => track.stop());
+      return null;
+    });
+  }, []);
+
+  const startCameraPreview = useCallback(async () => {
+    setCameraMessage("");
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraMessage("Camera mode is not supported in this browser. Use text or voice mode instead.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      setCameraStream(stream);
+      setAnswerMode("camera");
+    } catch {
+      setCameraMessage("Camera permission was denied. You can still continue with text or voice.");
+    }
+  }, []);
+
+  const askFollowUpQuestion = async () => {
+    if (!interviewSessionId || !activeScoredAnswer) {
+      setSimulationFeedback("Score the current answer first, then ask the AI interviewer for a follow-up.");
+      return;
+    }
+
+    setInterviewActionLoading(true);
+    try {
+      const response = await fetch(`/api/career/interviews/${interviewSessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "followup",
+          questionIndex: currentSimulationIndex,
+        }),
+      });
+      const session = await response.json();
+      if (!response.ok) throw new Error(session.error || "Unable to add follow-up question.");
+
+      setSimulationQuestions(session.questions ?? simulationQuestions);
+      setSimulationHistory(session.answers ?? simulationHistory);
+      setCurrentSimulationIndex((index) => Math.min(index + 1, (session.questions?.length ?? simulationQuestions.length) - 1));
+      setSimulationAnswer("");
+      setSimulationFeedback("");
+      setSimulationFinished(false);
+      setSessionSeconds(0);
+      rememberInterviewSession(session);
+      setMessage("AI interviewer added a follow-up question to this session.");
+    } catch (error) {
+      setSimulationFeedback(error instanceof Error ? error.message : "Unable to add follow-up question.");
+    } finally {
+      setInterviewActionLoading(false);
+    }
   };
 
   const saveCareerProfile = async (nextProfile: CareerProfile) => {
@@ -588,6 +791,8 @@ export default function CareerHubPage() {
       setSimulationFeedback("");
       setSimulationHistory(session.answers ?? []);
       setSimulationFinished(false);
+      setSessionSeconds(0);
+      stopVoiceCapture();
       rememberInterviewSession(session);
       setMessage("Interview room launched and saved. Answer the first question like a real interview.");
     } catch (error) {
@@ -638,6 +843,8 @@ export default function CareerHubPage() {
       setCurrentSimulationIndex((index) => index + 1);
       setSimulationAnswer("");
       setSimulationFeedback("");
+      setSessionSeconds(0);
+      stopVoiceCapture();
       return;
     }
 
@@ -850,16 +1057,16 @@ export default function CareerHubPage() {
   };
 
   return (
-    <main className="mx-auto max-w-7xl p-5 lg:p-8">
-      <header className="mb-7 overflow-hidden rounded-[1.5rem] border border-white/10 bg-gradient-to-br from-purple-500/10 via-blue-500/5 to-transparent p-6">
+    <main className="zentric-page-shell mx-auto max-w-7xl">
+      <header className="zentric-human-card mb-7 overflow-hidden rounded-[1.5rem] p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <Badge className="mb-4 border-blue-400/30 bg-blue-500/10 text-blue-200">
+            <Badge className="mb-4 border-[#CFE0F2] bg-[#EEF4FF] text-[#315F8F]">
               <BriefcaseBusiness className="mr-1 h-3 w-3" />
               AI Career Command Center
             </Badge>
-            <h1 className="text-3xl font-bold text-white">Career Hub</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-400">
+            <h1 className="text-3xl font-bold text-[#172033]">Career Hub</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#667085]">
               Resume upload, interview prep, and company readiness tied back to your Zentric growth mission.
             </p>
           </div>
@@ -870,7 +1077,7 @@ export default function CareerHubPage() {
         </div>
       </header>
 
-      <div className="mb-6 flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-2">
+      <div className="zentric-panel mb-6 flex gap-2 overflow-x-auto rounded-2xl p-2">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
@@ -880,8 +1087,8 @@ export default function CareerHubPage() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex min-w-fit items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition ${
                 active
-                  ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white"
-                  : "text-gray-400 hover:bg-white/5 hover:text-white"
+                  ? "zentric-soft-active"
+                  : "text-[#667085] hover:bg-[#F4F8FC] hover:text-[#172033]"
               }`}
             >
               <Icon className="h-4 w-4" />
@@ -941,7 +1148,7 @@ export default function CareerHubPage() {
                     <Button
                       onClick={() => saveProfile()}
                       disabled={saving || !profile.dreamRole.trim() || !profile.targetCompany.trim()}
-                      className="bg-gradient-to-r from-purple-600 to-blue-600 text-white"
+                      className="zentric-primary-action"
                     >
                       {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Target className="mr-2 h-4 w-4" />}
                       Save Mission
@@ -973,7 +1180,7 @@ export default function CareerHubPage() {
 
                   <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
                     <p className="text-sm leading-6 text-gray-300">
-                      <span className="font-medium text-white">Active mission:</span>{" "}
+                      <span className="font-medium text-[#172033]">Active mission:</span>{" "}
                       {profile.dreamRole || "Dream Role"} at {profile.targetCompany || "Target Company"}.
                       Zentric uses this target to calculate role match, company readiness, interview mode,
                       missing skills, and planner actions without requiring a job description.
@@ -1028,7 +1235,7 @@ export default function CareerHubPage() {
                             <FileText className="mr-1 h-3 w-3" />
                             Smart Resume Upload
                           </Badge>
-                          <h2 className="text-2xl font-bold text-white">Upload once. Let Zentric analyze the rest.</h2>
+                          <h2 className="text-2xl font-bold text-[#172033]">Upload once. Let Zentric analyze the rest.</h2>
                           <p className="mt-2 max-w-xl text-sm leading-6 text-gray-400">
                             Add your resume and Zentric will extract the text, calculate your resume score, find weak areas,
                             and connect the result to interview prep plus company readiness.
@@ -1049,7 +1256,7 @@ export default function CareerHubPage() {
                         <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 text-white shadow-lg shadow-blue-500/20 transition group-hover:scale-105">
                           {resumeUploading ? <Loader2 className="h-6 w-6 animate-spin" /> : <FileUp className="h-6 w-6" />}
                         </span>
-                        <span className="text-base font-semibold text-white">
+                        <span className="text-base font-semibold text-[#172033]">
                           {resumeUploading ? "Reading your resume..." : "Choose your resume file"}
                         </span>
                         <span className="mt-2 max-w-md text-sm leading-6 text-gray-400">
@@ -1158,7 +1365,7 @@ export default function CareerHubPage() {
 
           {activeTab === "interview" && (
             <div className="space-y-5">
-              <Card className="overflow-hidden border-cyan-400/20 bg-gradient-to-br from-cyan-500/[0.08] via-blue-500/[0.04] to-purple-500/[0.04]">
+              <Card className="zentric-human-card overflow-hidden">
                 <CardHeader>
                   <Badge className="w-fit border-cyan-400/30 bg-cyan-400/10 text-cyan-100">
                     Create Interview
@@ -1221,9 +1428,49 @@ export default function CareerHubPage() {
                     </div>
                   )}
 
+                  <div className="rounded-2xl border border-[#D6E4F5] bg-[#F8FBFF] p-4 shadow-sm shadow-blue-100/50">
+                    <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-semibold text-[#172033]">Answer mode</p>
+                        <p className="text-xs leading-5 text-gray-500">
+                          Keep it simple: type, speak, or practice with camera preview. Scoring still uses your answer transcript.
+                        </p>
+                      </div>
+                      <Badge className="w-fit border-cyan-400/30 bg-cyan-400/10 text-cyan-100">
+                        Optional mic/camera
+                      </Badge>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {answerModes.map((mode) => {
+                        const Icon = mode.icon;
+                        const active = answerMode === mode.id;
+                        return (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            onClick={() => {
+                              setAnswerMode(mode.id);
+                              if (mode.id !== "camera") stopCameraPreview();
+                              if (mode.id !== "voice") stopVoiceCapture();
+                            }}
+                            className={`rounded-2xl border p-4 text-left transition ${
+                              active
+                                ? "zentric-soft-active"
+                                : "border-[#D6E4F5] bg-[#FFFDF9] hover:border-[#A8BFD8]"
+                            }`}
+                          >
+                            <Icon className="mb-3 h-5 w-5 text-cyan-200" />
+                            <p className="font-semibold text-[#172033]">{mode.label}</p>
+                            <p className="mt-2 text-xs leading-5 text-gray-500">{mode.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {isCustomSimulationRole ? (
-                    <div className="rounded-2xl border border-purple-400/20 bg-purple-500/[0.06] p-4">
-                      <p className="font-semibold text-white">Custom Interview</p>
+                    <div className="rounded-2xl border border-[#D6E4F5] bg-[#F4EFFF] p-4">
+                      <p className="font-semibold text-[#172033]">Custom Interview</p>
                       <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-400">
                         No DSA/HR/Mixed selection needed here. This room adapts to your custom target role and
                         evaluates whether your answers prove fit, skills, projects, and growth plan.
@@ -1237,11 +1484,11 @@ export default function CareerHubPage() {
                           onClick={() => setSimulationMode(mode.id)}
                           className={`rounded-2xl border p-4 text-left transition ${
                             simulationMode === mode.id
-                              ? "border-cyan-400/40 bg-cyan-400/10"
-                              : "border-white/10 bg-white/[0.03] hover:border-white/20"
+                              ? "zentric-soft-active"
+                              : "border-[#D6E4F5] bg-[#FFFDF9] hover:border-[#A8BFD8]"
                           }`}
                         >
-                          <p className="font-semibold text-white">{mode.label}</p>
+                          <p className="font-semibold text-[#172033]">{mode.label}</p>
                           <p className="mt-2 text-xs leading-5 text-gray-500">{mode.description}</p>
                         </button>
                       ))}
@@ -1250,8 +1497,8 @@ export default function CareerHubPage() {
 
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 p-4">
                     <div>
-                      <p className="text-sm font-semibold text-white">
-                        {effectiveSimulationModeLabel} · {resolvedSimulationRole} · {simulationDifficulty}
+                      <p className="text-sm font-semibold text-[#172033]">
+                        {effectiveSimulationModeLabel} - {resolvedSimulationRole} - {simulationDifficulty} - {answerModes.find((mode) => mode.id === answerMode)?.label}
                       </p>
                       <p className="mt-1 text-xs text-gray-500">
                         {isCustomSimulationRole
@@ -1262,7 +1509,7 @@ export default function CareerHubPage() {
                     <Button
                       onClick={launchInterviewSimulation}
                       disabled={interviewActionLoading}
-                      className="bg-gradient-to-r from-cyan-500 to-emerald-500 text-black hover:from-cyan-400 hover:to-emerald-400"
+                      className="zentric-primary-action text-white"
                     >
                       {interviewActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
                       Launch room
@@ -1270,95 +1517,254 @@ export default function CareerHubPage() {
                   </div>
 
                   {activeSimulationQuestion && (
-                    <div className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
-                      <div className="rounded-2xl border border-cyan-400/20 bg-black/30 p-4">
-                        <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <div className="overflow-hidden rounded-[1.5rem] border border-[#C7D9EE] bg-[#F8FBFF] shadow-sm shadow-blue-100/60">
+                      <div className="flex flex-col gap-3 border-b border-[#D6E4F5] bg-[#EEF4FF] p-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Badge className="border-cyan-400/30 bg-cyan-400/10 text-cyan-100">
                             Question {currentSimulationIndex + 1}/{simulationQuestions.length}
                           </Badge>
                           <Badge className="border-purple-400/30 bg-purple-400/10 text-purple-100">
                             {activeSimulationQuestion.mode}
                           </Badge>
+                          <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-100">
+                            {activeSimulationQuestion.skillArea ?? "Interview Skill"}
+                          </Badge>
                         </div>
-                        <p className="text-lg font-semibold leading-7 text-white">{activeSimulationQuestion.question}</p>
-                        <Textarea
-                          value={simulationAnswer}
-                          onChange={(event) => setSimulationAnswer(event.target.value)}
-                          placeholder="Answer like a real interview. Use structure, examples, tradeoffs, and impact..."
-                          className="mt-4 min-h-36"
-                        />
-                        <div className="mt-4 flex flex-wrap gap-3">
-                          <Button
-                            onClick={submitSimulationAnswer}
-                            disabled={interviewActionLoading}
-                            className="bg-gradient-to-r from-purple-600 to-blue-600 text-white"
-                          >
-                            {interviewActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            Score answer
-                          </Button>
-                          <Button
-                            onClick={nextSimulationQuestion}
-                            variant="outline"
-                            className="border-cyan-400/30 text-cyan-100"
-                            disabled={!simulationFeedback || interviewActionLoading}
-                          >
-                            {currentSimulationIndex < simulationQuestions.length - 1 ? "Next question" : "Finish simulation"}
-                          </Button>
+                        <div className="grid grid-cols-3 gap-2 text-xs sm:min-w-[360px]">
+                          <div className="rounded-xl border border-[#D6E4F5] bg-[#FFFDF9] p-2">
+                            <Timer className="mb-1 h-3.5 w-3.5 text-cyan-200" />
+                            <p className="font-semibold text-[#172033]">{sessionTimeLabel}</p>
+                            <p className="text-gray-500">timer</p>
+                          </div>
+                          <div className="rounded-xl border border-[#D6E4F5] bg-[#FFFDF9] p-2">
+                            <Radio className="mb-1 h-3.5 w-3.5 text-cyan-200" />
+                            <p className="font-semibold text-[#172033]">{spokenWordCount}</p>
+                            <p className="text-gray-500">words</p>
+                          </div>
+                          <div className="rounded-xl border border-[#D6E4F5] bg-[#FFFDF9] p-2">
+                            <Mic className="mb-1 h-3.5 w-3.5 text-cyan-200" />
+                            <p className="font-semibold text-[#172033]">{fillerWordCount}</p>
+                            <p className="text-gray-500">fillers</p>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="space-y-3">
-                        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
-                          <p className="text-xs uppercase tracking-[0.16em] text-emerald-200">Simulation Score</p>
-                          <p className="mt-2 text-4xl font-bold text-white">{simulationAverage || 0}%</p>
-                          <p className="mt-1 text-xs text-gray-400">{simulationHistory.length} answer{simulationHistory.length === 1 ? "" : "s"} scored</p>
-                        </div>
-                        {simulationFeedback ? (
-                          <>
-                            <div className="rounded-2xl border border-blue-400/20 bg-blue-400/10 p-4">
-                              <p className="font-semibold text-blue-100">AI Mentor Feedback</p>
-                              <p className="mt-2 text-sm leading-6 text-gray-300">{simulationFeedback}</p>
-                            </div>
-
-                            {activeScoredAnswer && (
-                              <>
-                                <div className="grid grid-cols-2 gap-2">
-                                  <MiniScore label="Technical depth" value={activeScoredAnswer.technicalDepth ?? activeScoredAnswer.score} />
-                                  <MiniScore label="Clarity" value={activeScoredAnswer.clarity ?? activeScoredAnswer.score} />
-                                  <MiniScore label="Structure" value={activeScoredAnswer.structure ?? activeScoredAnswer.score} />
-                                  <MiniScore label="Role fit" value={activeScoredAnswer.roleFit ?? activeScoredAnswer.score} />
-                                  <MiniScore label="Confidence" value={activeScoredAnswer.confidence ?? activeScoredAnswer.score} />
-                                  <MiniScore label="Resume proof" value={activeScoredAnswer.resumeProof ?? activeScoredAnswer.score} />
-                                </div>
-
-                                <MentorPanel
-                                  title="Ideal answer"
-                                  tone="cyan"
-                                  content={activeScoredAnswer.idealAnswer ?? "Use the ideal answer signals and cover the core points clearly."}
-                                />
-                                <MentorPanel
-                                  title="Improved version"
-                                  tone="purple"
-                                  content={activeScoredAnswer.improvedAnswer ?? "Rewrite with structure, one concrete example, tradeoffs, and impact."}
-                                />
-                                <MentorPanel
-                                  title="Follow-up question"
-                                  tone="emerald"
-                                  content={activeScoredAnswer.followUpQuestion ?? "What tradeoff would you mention if the interviewer pushed harder?"}
-                                />
-                              </>
-                            )}
-                          </>
-                        ) : (
-                          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                            <p className="font-semibold text-white">Ideal answer signals</p>
-                            <ul className="mt-2 space-y-2 text-sm text-gray-400">
-                              {activeSimulationQuestion.idealPoints.map((point) => (
-                                <li key={point}>• {point}</li>
-                              ))}
-                            </ul>
+                      <div className="border-b border-[#D6E4F5] bg-[#F8FBFF] p-4">
+                        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-[#172033]">Choose how you want to answer</p>
+                            <p className="text-xs leading-5 text-gray-500">
+                              You can switch anytime after launching the room. Voice fills the answer box; camera opens a practice preview.
+                            </p>
                           </div>
-                        )}
+                          <Badge className="w-fit border-[#C7D9EE] bg-[#EEF4FF] text-[#315F8F]">
+                            Current: {answerModes.find((mode) => mode.id === answerMode)?.label}
+                          </Badge>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          {answerModes.map((mode) => {
+                            const Icon = mode.icon;
+                            const active = answerMode === mode.id;
+
+                            return (
+                              <button
+                                key={`room-${mode.id}`}
+                                type="button"
+                                onClick={() => {
+                                  if (mode.id === "voice") {
+                                    startVoiceCapture();
+                                    return;
+                                  }
+
+                                  if (mode.id === "camera") {
+                                    stopVoiceCapture();
+                                    startCameraPreview();
+                                    return;
+                                  }
+
+                                  stopVoiceCapture();
+                                  stopCameraPreview();
+                                  setAnswerMode("text");
+                                }}
+                                className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${
+                                  active
+                                    ? "zentric-soft-active"
+                                    : "border-[#D6E4F5] bg-[#FFFDF9] hover:border-[#A8BFD8]"
+                                }`}
+                              >
+                                <Icon className="h-4 w-4 text-[#315F8F]" />
+                                <span>
+                                  <span className="block text-sm font-semibold text-[#172033]">{mode.label}</span>
+                                  <span className="text-xs text-gray-500">
+                                    {mode.id === "voice"
+                                      ? isListening
+                                        ? "Listening now"
+                                        : "Click to speak"
+                                      : mode.id === "camera"
+                                        ? cameraStream
+                                          ? "Camera on"
+                                          : "Click to preview"
+                                        : "Type normally"}
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-5 p-4 lg:grid-cols-[1.05fr_0.95fr]">
+                        <div className="space-y-4">
+                          <div className="rounded-2xl border border-[#D6E4F5] bg-[#FFFDF9] p-4">
+                            <p className="text-xs uppercase tracking-[0.16em] text-cyan-200">AI interviewer asks</p>
+                            <p className="mt-2 text-lg font-semibold leading-7 text-[#172033]">{activeSimulationQuestion.question}</p>
+                          </div>
+
+                          {answerMode === "camera" && (
+                            <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
+                              {cameraStream ? (
+                                <video
+                                  ref={videoRef}
+                                  autoPlay
+                                  muted
+                                  playsInline
+                                  className="aspect-video w-full rounded-2xl border border-white/10 bg-black object-cover"
+                                />
+                              ) : (
+                                <div className="flex aspect-video flex-col items-center justify-center rounded-2xl border border-dashed border-cyan-400/30 bg-black/30 text-center">
+                                  <Video className="mb-3 h-8 w-8 text-cyan-200" />
+                                  <p className="font-semibold text-[#172033]">Camera preview is off</p>
+                                  <p className="mt-1 max-w-sm text-xs leading-5 text-gray-400">
+                                    Start camera only if you want a realistic interview environment.
+                                  </p>
+                                </div>
+                              )}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  onClick={cameraStream ? stopCameraPreview : startCameraPreview}
+                                  variant="outline"
+                                  className="border-[#C7D9EE] text-[#315F8F]"
+                                >
+                                  <Camera className="h-4 w-4" />
+                                  {cameraStream ? "Turn camera off" : "Start camera preview"}
+                                </Button>
+                              </div>
+                              {cameraMessage && <p className="mt-2 text-xs text-yellow-100">{cameraMessage}</p>}
+                            </div>
+                          )}
+
+                          <div className="rounded-2xl border border-[#D6E4F5] bg-[#FFFDF9] p-4">
+                            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="font-semibold text-[#172033]">
+                                {answerMode === "voice" ? "Speak or edit transcript" : answerMode === "camera" ? "Answer transcript" : "Your answer"}
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  onClick={isListening ? stopVoiceCapture : startVoiceCapture}
+                                  variant="outline"
+                                  className={isListening ? "border-red-400/30 text-red-200" : "border-cyan-400/30 text-cyan-100"}
+                                >
+                                  {isListening ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                                  {isListening ? "Stop voice" : "Use voice"}
+                                </Button>
+                              </div>
+                            </div>
+                            <Textarea
+                              value={simulationAnswer}
+                              onChange={(event) => setSimulationAnswer(event.target.value)}
+                              placeholder="Answer like a real interview. Use structure, examples, tradeoffs, and impact..."
+                              className="min-h-40"
+                            />
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+                              {isListening && <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-emerald-100">Listening...</span>}
+                              {voiceMessage && <span className="rounded-full border border-yellow-400/30 bg-yellow-400/10 px-3 py-1 text-yellow-100">{voiceMessage}</span>}
+                              <span>Tip: use “first, then, tradeoff, result” for stronger structure.</span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-3">
+                            <Button
+                              onClick={submitSimulationAnswer}
+                              disabled={interviewActionLoading}
+                              className="bg-gradient-to-r from-purple-600 to-blue-600 text-white"
+                            >
+                              {interviewActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                              Score answer
+                            </Button>
+                            <Button
+                              onClick={askFollowUpQuestion}
+                              variant="outline"
+                              className="border-[#BFD9C8] text-[#28714D]"
+                              disabled={!activeScoredAnswer || interviewActionLoading}
+                            >
+                              Ask AI follow-up
+                            </Button>
+                            <Button
+                              onClick={nextSimulationQuestion}
+                              variant="outline"
+                              className="border-[#C7D9EE] text-[#315F8F]"
+                              disabled={!simulationFeedback || interviewActionLoading}
+                            >
+                              {currentSimulationIndex < simulationQuestions.length - 1 ? "Next question" : "Finish simulation"}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4">
+                            <p className="text-xs uppercase tracking-[0.16em] text-emerald-200">Simulation Score</p>
+                            <p className="mt-2 text-4xl font-bold text-[#172033]">{simulationAverage || 0}%</p>
+                            <p className="mt-1 text-xs text-gray-400">{simulationHistory.length} answer{simulationHistory.length === 1 ? "" : "s"} scored</p>
+                          </div>
+                          {simulationFeedback ? (
+                            <>
+                              <div className="rounded-2xl border border-blue-400/20 bg-blue-400/10 p-4">
+                                <p className="font-semibold text-blue-100">AI Mentor Feedback</p>
+                                <p className="mt-2 text-sm leading-6 text-gray-300">{simulationFeedback}</p>
+                              </div>
+
+                              {activeScoredAnswer && (
+                                <>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <MiniScore label="Technical depth" value={activeScoredAnswer.technicalDepth ?? activeScoredAnswer.score} />
+                                    <MiniScore label="Clarity" value={activeScoredAnswer.clarity ?? activeScoredAnswer.score} />
+                                    <MiniScore label="Structure" value={activeScoredAnswer.structure ?? activeScoredAnswer.score} />
+                                    <MiniScore label="Role fit" value={activeScoredAnswer.roleFit ?? activeScoredAnswer.score} />
+                                    <MiniScore label="Confidence" value={activeScoredAnswer.confidence ?? activeScoredAnswer.score} />
+                                    <MiniScore label="Resume proof" value={activeScoredAnswer.resumeProof ?? activeScoredAnswer.score} />
+                                  </div>
+
+                                  <MentorPanel
+                                    title="Ideal answer"
+                                    tone="cyan"
+                                    content={activeScoredAnswer.idealAnswer ?? "Use the ideal answer signals and cover the core points clearly."}
+                                  />
+                                  <MentorPanel
+                                    title="Improved version"
+                                    tone="purple"
+                                    content={activeScoredAnswer.improvedAnswer ?? "Rewrite with structure, one concrete example, tradeoffs, and impact."}
+                                  />
+                                  <MentorPanel
+                                    title="Follow-up question"
+                                    tone="emerald"
+                                    content={activeScoredAnswer.followUpQuestion ?? "What tradeoff would you mention if the interviewer pushed harder?"}
+                                  />
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            <div className="rounded-2xl border border-[#D6E4F5] bg-[#FFFDF9] p-4">
+                              <p className="font-semibold text-[#172033]">Ideal answer signals</p>
+                              <ul className="mt-2 space-y-2 text-sm text-gray-400">
+                                {activeSimulationQuestion.idealPoints.map((point) => (
+                                  <li key={point}>• {point}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1389,8 +1795,8 @@ export default function CareerHubPage() {
                     </div>
 
                     <div className="grid gap-5 lg:grid-cols-2">
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                        <p className="mb-3 font-semibold text-white">Strong answers</p>
+                      <div className="rounded-2xl border border-[#D6E4F5] bg-[#FFFDF9] p-4">
+                        <p className="mb-3 font-semibold text-[#172033]">Strong answers</p>
                         {interviewReport.strongAnswers.length === 0 ? (
                           <p className="text-sm text-gray-500">No strong answer yet. Aim for specific examples, tradeoffs, and measurable impact.</p>
                         ) : interviewReport.strongAnswers.map((item) => (
@@ -1401,8 +1807,8 @@ export default function CareerHubPage() {
                         ))}
                       </div>
 
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                        <p className="mb-3 font-semibold text-white">Weak answers</p>
+                      <div className="rounded-2xl border border-[#D6E4F5] bg-[#FFFDF9] p-4">
+                        <p className="mb-3 font-semibold text-[#172033]">Weak answers</p>
                         {interviewReport.weakAnswers.length === 0 ? (
                           <p className="text-sm text-gray-500">No major weak answer found. Keep practicing at higher difficulty.</p>
                         ) : interviewReport.weakAnswers.map((item) => (
@@ -1462,10 +1868,10 @@ export default function CareerHubPage() {
                   </CardHeader>
                   <CardContent className="grid gap-3 md:grid-cols-2">
                     {interviewSessions.slice(0, 4).map((session) => (
-                      <div key={session.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div key={session.id} className="rounded-2xl border border-[#D6E4F5] bg-[#F8FBFF] p-4 shadow-sm shadow-blue-100/50">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="font-semibold text-white">{session.role}</p>
+                            <p className="font-semibold text-[#172033]">{session.role}</p>
                             <p className="mt-1 text-xs text-gray-500">
                               {session.mode === "custom" ? "Custom Interview" : session.mode} · {session.difficulty} · {session.status}
                             </p>
@@ -1576,7 +1982,7 @@ export default function CareerHubPage() {
                       <SectionList title="Skills Missing" items={selectedCompany.weakestSkills} />
                       <SectionList title="Areas To Master" items={selectedCompany.missingTopics} />
                       <div>
-                        <p className="mb-2 text-sm font-medium text-white">Estimated Preparation</p>
+                        <p className="mb-2 text-sm font-medium text-[#172033]">Estimated Preparation</p>
                         <p className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-gray-300">
                           {selectedCompany.estimatedPrepTime}
                         </p>
@@ -1645,7 +2051,7 @@ function ScoreTile({ label, value }: { label: string; value?: number | null }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className={`mt-1 font-bold ${hasScore ? "text-2xl text-white" : "text-sm text-yellow-100"}`}>
+      <p className={`mt-1 font-bold ${hasScore ? "text-2xl text-[#172033]" : "text-sm text-yellow-100"}`}>
         {hasScore ? `${value}/100` : "Not analyzed yet"}
       </p>
       <Progress value={value ?? 0} className="mt-3" />
@@ -1657,7 +2063,7 @@ function MissionSignal({ label, value, description }: { label: string; value: st
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500">{label}</p>
-      <p className="mt-2 truncate text-lg font-bold text-white">{value}</p>
+      <p className="mt-2 truncate text-lg font-bold text-[#172033]">{value}</p>
       <p className="mt-1 text-xs leading-5 text-gray-500">{description}</p>
     </div>
   );
@@ -1672,7 +2078,7 @@ function BigScore({ value, label }: { value?: number | null; label: string }) {
         <Target className="h-5 w-5 text-blue-300" />
         <p className="text-sm font-medium text-blue-100">{label}</p>
       </div>
-      <p className={hasScore ? "text-5xl font-bold text-white" : "text-lg font-semibold text-yellow-100"}>
+      <p className={hasScore ? "text-5xl font-bold text-[#172033]" : "text-lg font-semibold text-yellow-100"}>
         {hasScore ? value : "Not analyzed yet"}
       </p>
       <p className="text-sm text-gray-500">{hasScore ? "out of 100" : "add resume/profile data to unlock this score"}</p>
@@ -1736,7 +2142,7 @@ function ScoreBreakdownRow({ item }: { item: { label: string; value: number; det
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium text-white">{item.label}</p>
+          <p className="text-sm font-medium text-[#172033]">{item.label}</p>
           <p className="mt-1 text-xs leading-5 text-gray-500">{item.detail}</p>
         </div>
         <span className="text-sm font-semibold text-blue-200">{item.value}%</span>
@@ -1750,7 +2156,7 @@ function ResumeInsightTile({ title, value, description }: { title: string; value
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
       <p className="text-xs uppercase tracking-[0.18em] text-gray-500">{title}</p>
-      <p className="mt-2 text-lg font-bold text-white">{value}</p>
+      <p className="mt-2 text-lg font-bold text-[#172033]">{value}</p>
       <p className="mt-1 text-xs leading-5 text-gray-500">{description}</p>
     </div>
   );
@@ -1759,7 +2165,7 @@ function ResumeInsightTile({ title, value, description }: { title: string; value
 function SectionList({ title, items, positive = false }: { title: string; items: string[]; positive?: boolean }) {
   return (
     <div>
-      <p className="mb-2 text-sm font-medium text-white">{title}</p>
+      <p className="mb-2 text-sm font-medium text-[#172033]">{title}</p>
       <div className="space-y-2">
         {items.length === 0 ? (
           <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-gray-500">

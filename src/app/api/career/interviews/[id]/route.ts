@@ -145,6 +145,73 @@ export async function PATCH(
       return NextResponse.json(serializeSession(updated));
     }
 
+    if (body.action === "followup") {
+      const questionIndex = Number(body.questionIndex);
+      const previousAnswer = answers.find((item) => item.questionIndex === questionIndex);
+      const sourceQuestion = questions[questionIndex];
+
+      if (!Number.isInteger(questionIndex) || questionIndex < 0 || !sourceQuestion || !previousAnswer) {
+        throw badRequest("Score the current answer before asking a follow-up.");
+      }
+
+      const followUpPrompt =
+        previousAnswer.followUpQuestion ||
+        `Follow-up: Can you go deeper on ${sourceQuestion.skillArea} with one concrete example?`;
+      const nextQuestion = questions[questionIndex + 1];
+
+      if (nextQuestion?.question === followUpPrompt) {
+        return NextResponse.json(serializeSession(interview));
+      }
+
+      const followUpQuestion: InterviewQuestion = {
+        id: `${sourceQuestion.id}-follow-up-${Date.now()}`,
+        mode: "AI Follow-up",
+        question: followUpPrompt,
+        idealPoints: previousAnswer.idealPoints?.length
+          ? previousAnswer.idealPoints
+          : ["specific example", "deeper reasoning", "tradeoff", "result"],
+        skillArea: previousAnswer.skillArea || sourceQuestion.skillArea || "Follow-up Depth",
+      };
+      const nextQuestions = [
+        ...questions.slice(0, questionIndex + 1),
+        followUpQuestion,
+        ...questions.slice(questionIndex + 1),
+      ];
+      const shiftedAnswers = answers
+        .map((answerItem) =>
+          answerItem.questionIndex > questionIndex
+            ? { ...answerItem, questionIndex: answerItem.questionIndex + 1 }
+            : answerItem,
+        )
+        .sort((a, b) => a.questionIndex - b.questionIndex);
+
+      const updated = await careerInterviewDb.interviewSession.update({
+        where: { id: interview.id },
+        data: {
+          questions: nextQuestions,
+          answers: shiftedAnswers,
+        },
+      });
+
+      await recordCoachEvent(session.user.id, {
+        type: "interview_followup_added",
+        module: "Career Hub",
+        title: "AI follow-up question added",
+        detail: followUpPrompt,
+        impact: 2,
+        metadata: {
+          interviewId: interview.id,
+          mode: interview.mode,
+          role: interview.role,
+          difficulty: interview.difficulty,
+          sourceQuestion: sourceQuestion.question,
+          followUpQuestion: followUpPrompt,
+        },
+      });
+
+      return NextResponse.json(serializeSession(updated));
+    }
+
     if (body.action === "finish") {
       const profile = await careerInterviewDb.careerProfile.findUnique({
         where: { userId: session.user.id },
