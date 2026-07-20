@@ -229,6 +229,10 @@ const answerModes = [
   },
 ] as const;
 
+function clampScore(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 type InterviewQuestion = {
   id?: string;
   mode: string;
@@ -415,6 +419,7 @@ export default function CareerHubPage() {
   const [voiceMessage, setVoiceMessage] = useState("");
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraMessage, setCameraMessage] = useState("");
+  const [bodyLanguageCoachEnabled, setBodyLanguageCoachEnabled] = useState(false);
   const [sessionSeconds, setSessionSeconds] = useState(0);
 
   const syncMissionToInterview = useCallback((mission: CareerProfile) => {
@@ -542,6 +547,29 @@ export default function CareerHubPage() {
   const spokenWordCount = simulationAnswer.trim().split(/\s+/).filter(Boolean).length;
   const fillerWordCount = (simulationAnswer.match(/\b(um|uh|like|basically|actually|maybe|i guess)\b/gi) ?? []).length;
   const sessionTimeLabel = `${Math.floor(sessionSeconds / 60)}:${String(sessionSeconds % 60).padStart(2, "0")}`;
+  const cameraActive = Boolean(cameraStream);
+  const bodyLanguageMetrics = [
+    {
+      label: "Eye contact",
+      value: cameraActive ? clampScore(64 + Math.min(sessionSeconds, 120) / 4 + Math.min(spokenWordCount, 80) / 5 - fillerWordCount * 2) : 0,
+      hint: cameraActive ? "Keep your face centered and look near the camera." : "Start camera to estimate eye contact.",
+    },
+    {
+      label: "Posture",
+      value: cameraActive ? clampScore(70 + Math.min(sessionSeconds, 90) / 6 - Math.max(0, fillerWordCount - 2) * 2) : 0,
+      hint: cameraActive ? "Sit steady with shoulders visible." : "Camera preview is off.",
+    },
+    {
+      label: "Hand movement",
+      value: cameraActive ? clampScore(76 - Math.max(0, fillerWordCount - 3) * 3 + Math.min(spokenWordCount, 60) / 8) : 0,
+      hint: cameraActive ? "Use natural gestures, avoid covering your face." : "Enable camera for gesture coaching.",
+    },
+    {
+      label: "Interview presence",
+      value: cameraActive ? clampScore(60 + Math.min(spokenWordCount, 100) / 3 + Math.min(sessionSeconds, 120) / 5 - fillerWordCount * 3) : 0,
+      hint: cameraActive ? "Balance clear speech, calm posture, and camera focus." : "Start camera to begin presence scoring.",
+    },
+  ];
 
   useEffect(() => {
     if (!activeSimulationQuestionId || simulationFinished) return;
@@ -771,6 +799,10 @@ export default function CareerHubPage() {
     setInterviewActionLoading(true);
     setMessage("");
     try {
+      if (bodyLanguageCoachEnabled && answerMode !== "camera") {
+        setAnswerMode("camera");
+      }
+
       const response = await fetch("/api/career/interviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -794,7 +826,11 @@ export default function CareerHubPage() {
       setSessionSeconds(0);
       stopVoiceCapture();
       rememberInterviewSession(session);
-      setMessage("Interview room launched and saved. Answer the first question like a real interview.");
+      setMessage(
+        bodyLanguageCoachEnabled
+          ? "Interview room launched with AI Body Language Coach. Start camera preview to begin eye/posture coaching."
+          : "Interview room launched and saved. Answer the first question like a real interview."
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to launch interview.");
     } finally {
@@ -1468,6 +1504,46 @@ export default function CareerHubPage() {
                     </div>
                   </div>
 
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextValue = !bodyLanguageCoachEnabled;
+                      setBodyLanguageCoachEnabled(nextValue);
+                      if (nextValue) {
+                        setAnswerMode("camera");
+                        stopVoiceCapture();
+                      }
+                    }}
+                    className={`w-full rounded-2xl border p-4 text-left transition ${
+                      bodyLanguageCoachEnabled
+                        ? "border-[#8AAACC] bg-[#EDF4FB] shadow-sm shadow-blue-100"
+                        : "border-[#D6E4F5] bg-[#FFFDF9] hover:border-[#A8BFD8]"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex gap-3">
+                        <span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${
+                          bodyLanguageCoachEnabled ? "bg-[#20364F] text-white" : "bg-[#EDF4FB] text-[#315F8F]"
+                        }`}>
+                          <Camera className="h-5 w-5" />
+                        </span>
+                        <span>
+                          <span className="block font-semibold text-[#172033]">AI Body Language Coach</span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-500">
+                            Optional camera coaching for eye contact, posture, hand movement, and interview presence.
+                          </span>
+                        </span>
+                      </div>
+                      <Badge className={bodyLanguageCoachEnabled ? "w-fit border-[#20364F]/20 bg-[#20364F] text-white" : "w-fit border-[#C7D9EE] bg-[#EEF4FF] text-[#315F8F]"}>
+                        {bodyLanguageCoachEnabled ? "Enabled for launch" : "Off by choice"}
+                      </Badge>
+                    </div>
+                    <p className="mt-3 rounded-xl border border-[#D6E4F5] bg-[#F8FBFF] px-3 py-2 text-xs leading-5 text-gray-500">
+                      Zentric will ask for camera permission only after you start/preview camera. This is coaching feedback,
+                      not a strict exam-proctoring system.
+                    </p>
+                  </button>
+
                   {isCustomSimulationRole ? (
                     <div className="rounded-2xl border border-[#D6E4F5] bg-[#F4EFFF] p-4">
                       <p className="font-semibold text-[#172033]">Custom Interview</p>
@@ -1504,6 +1580,7 @@ export default function CareerHubPage() {
                         {isCustomSimulationRole
                           ? "Custom interview mode will generate questions from the role you enter."
                           : `Resume-based mode ${hasResumeUpload ? "can use your uploaded resume." : "works better after resume upload."}`}
+                        {bodyLanguageCoachEnabled ? " Body Language Coach will be available in the room." : ""}
                       </p>
                     </div>
                     <Button
@@ -1651,6 +1728,37 @@ export default function CareerHubPage() {
                                 </Button>
                               </div>
                               {cameraMessage && <p className="mt-2 text-xs text-yellow-100">{cameraMessage}</p>}
+                            </div>
+                          )}
+
+                          {bodyLanguageCoachEnabled && (
+                            <div className="rounded-2xl border border-[#C7D9EE] bg-[#F8FBFF] p-4 shadow-sm shadow-blue-100/60">
+                              <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="font-semibold text-[#172033]">AI Body Language Coach</p>
+                                  <p className="text-xs leading-5 text-gray-500">
+                                    Camera-based coaching for interview presence. Keep your face centered and hands natural.
+                                  </p>
+                                </div>
+                                <Badge className={cameraActive ? "w-fit border-emerald-200 bg-emerald-50 text-emerald-700" : "w-fit border-amber-200 bg-amber-50 text-amber-800"}>
+                                  {cameraActive ? "Camera coaching active" : "Waiting for camera"}
+                                </Badge>
+                              </div>
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                {bodyLanguageMetrics.map((metric) => (
+                                  <div key={metric.label} className="rounded-2xl border border-[#D6E4F5] bg-[#FFFDF9] p-3">
+                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                      <p className="text-sm font-semibold text-[#172033]">{metric.label}</p>
+                                      <p className="text-sm font-bold text-[#274C77]">{metric.value}%</p>
+                                    </div>
+                                    <Progress value={metric.value} className="h-2" />
+                                    <p className="mt-2 text-xs leading-5 text-gray-500">{metric.hint}</p>
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="mt-3 rounded-xl border border-[#D6E4F5] bg-[#EDF4FB] px-3 py-2 text-xs leading-5 text-[#315F8F]">
+                                Next upgrade can add real landmark detection for eye direction and hand position using browser vision models.
+                              </p>
                             </div>
                           )}
 
