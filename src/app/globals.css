@@ -241,6 +241,53 @@
     color: #ffffff !important;
   }
 
+  .zentric-light-main :where(
+    [class*="bg-[#172033]"],
+    [class*="bg-[#20364F]"],
+    [class*="bg-[#20364f]"],
+    [class*="bg-[#274C77]"],
+    [class*="bg-[#274c77]"],
+    [class*="bg-[#315F8F]"],
+    [class*="bg-[#315f8f]"],
+    [class*="bg-[#24324A]"],
+    [class*="bg-[#24324a]"],
+    [class*="from-[#315F8F]"],
+    [class*="from-[#315f8f]"],
+    [class*="from-[#274C77]"],
+    [class*="from-[#274c77]"],
+    [class*="to-[#20364F]"],
+    [class*="to-[#20364f]"],
+    [class*="to-[#172B40]"],
+    [class*="to-[#172b40]"],
+    .zentric-primary-action
+  ) {
+    color: #ffffff !important;
+  }
+
+  .zentric-light-main :where(
+    [class*="bg-[#172033]"],
+    [class*="bg-[#20364F]"],
+    [class*="bg-[#20364f]"],
+    [class*="bg-[#274C77]"],
+    [class*="bg-[#274c77]"],
+    [class*="bg-[#315F8F]"],
+    [class*="bg-[#315f8f]"],
+    [class*="bg-[#24324A]"],
+    [class*="bg-[#24324a]"],
+    [class*="from-[#315F8F]"],
+    [class*="from-[#315f8f]"],
+    [class*="from-[#274C77]"],
+    [class*="from-[#274c77]"],
+    [class*="to-[#20364F]"],
+    [class*="to-[#20364f]"],
+    [class*="to-[#172B40]"],
+    [class*="to-[#172b40]"],
+    .zentric-primary-action
+  ) :where(span, p, h1, h2, h3, h4, h5, h6, svg, path, small, strong, em, code) {
+    color: #ffffff !important;
+    stroke: currentColor;
+  }
+
   .zentric-light-main button[class*="border-white/"],
   .zentric-light-main a[class*="border-white/"],
   .zentric-light-main button[class*="border-slate"],
